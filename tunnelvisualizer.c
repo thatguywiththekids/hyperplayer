@@ -1,7 +1,7 @@
 #include "tunnelvisualizer.h"
 #include "player.h"
 
-#include <windows.h>
+#include "portability.h"
 #include <math.h>
 #include <stdbool.h>
 #include <string.h>

@@ -1,6 +1,5 @@
 #include "urls.h"
-
-#include <shellapi.h>
+#include "portability.h"
 #include <stdint.h>
 
 typedef struct RectI {

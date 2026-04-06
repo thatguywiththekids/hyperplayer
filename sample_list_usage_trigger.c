@@ -1,7 +1,7 @@
 #include "sample_list_usage_trigger.h"
 #include "player.h"
 
-#include <windows.h>
+#include "portability.h"
 #include <stdbool.h>
 #include <string.h>
 #include <wchar.h>

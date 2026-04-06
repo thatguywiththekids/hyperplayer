@@ -2,8 +2,9 @@
 #include "player.h"
 #include "ui.h"
 
-#include <windows.h>
-#include <stdbool.h>
+#include "portability.h"
+#include <math.h>
+
 #include <stdio.h>
 #include <wchar.h>
 

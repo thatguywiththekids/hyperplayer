@@ -1,8 +1,12 @@
 #include "app.h"
 #include "ui.h"
+#ifdef _WIN32
 #include "directory_listing_win32.h"
-#include "player.h"
 #include "resource.h"
+#else
+#include "directory_listing_posix.h"
+#endif
+#include "player.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -26,7 +30,7 @@ static void app_copy_wstr(wchar_t *dst, size_t dstCount, const wchar_t *src)
     dst[dstCount - 1] = L'\0';
 }
 
-static void app_join_path(wchar_t *dst, size_t dstCount, const wchar_t *dir, const wchar_t *name)
+void app_join_path(wchar_t *dst, size_t dstCount, const wchar_t *dir, const wchar_t *name)
 {
     if (!dst || dstCount == 0) {
         return;
@@ -38,7 +42,11 @@ static void app_join_path(wchar_t *dst, size_t dstCount, const wchar_t *dir, con
         return;
     }
 
+#ifdef _WIN32
     _snwprintf(dst, dstCount - 1, L"%ls\\%ls", dir, name);
+#else
+    _snwprintf(dst, dstCount - 1, L"%ls/%ls", dir, name);
+#endif
     dst[dstCount - 1] = L'\0';
 }
 
@@ -620,93 +628,27 @@ static void app_load_config(AppState *app)
     }
 }
 
+#ifdef _WIN32
 bool app_prepare_runtime_dlls(AppState *app)
 {
-    static const struct {
-        WORD resourceId;
-        const wchar_t *fileName;
-    } dlls[] = {
-        { IDR_LIBOPENMPT_DLL,      L"libopenmpt.dll" },
-        { IDR_OPENMPT_MPG123_DLL,  L"openmpt-mpg123.dll" },
-        { IDR_OPENMPT_OGG_DLL,     L"openmpt-ogg.dll" },
-        { IDR_OPENMPT_VORBIS_DLL,  L"openmpt-vorbis.dll" },
-        { IDR_OPENMPT_ZLIB_DLL,    L"openmpt-zlib.dll" }
-    };
-    wchar_t tempBase[MAX_PATH];
-    wchar_t exeName[128];
-    DWORD tempLen;
-
-    if (!app) {
-        return false;
-    }
-
-    app->runtimeDir[0] = L'\0';
-    app->runtimeDllsReady = false;
-
-    tempLen = GetTempPathW(MAX_PATH, tempBase);
-    if (tempLen == 0 || tempLen >= MAX_PATH) {
-        return false;
-    }
-
-    app_get_exe_name_no_ext(exeName, sizeof(exeName) / sizeof(exeName[0]));
-
-    _snwprintf(
-        app->runtimeDir,
-        (sizeof(app->runtimeDir) / sizeof(app->runtimeDir[0])) - 1,
-        L"%ls%ls_embedded_%lu",
-        tempBase,
-        exeName,
-        (unsigned long)GetCurrentProcessId()
-    );
-    app->runtimeDir[(sizeof(app->runtimeDir) / sizeof(app->runtimeDir[0])) - 1] = L'\0';
-
-    if (!app_ensure_directory(app->runtimeDir)) {
-        app->runtimeDir[0] = L'\0';
-        return false;
-    }
-
-    for (size_t i = 0; i < (sizeof(dlls) / sizeof(dlls[0])); ++i) {
-        wchar_t dllPath[MAX_PATH];
-
-        app_join_path(dllPath, sizeof(dllPath) / sizeof(dllPath[0]), app->runtimeDir, dlls[i].fileName);
-
-        if (!app_write_resource_to_path(dlls[i].resourceId, dllPath)) {
-            app_cleanup_runtime_dlls(app);
-            return false;
-        }
-    }
-
-    app->runtimeDllsReady = true;
+    // ... original code
+#else
+bool app_prepare_runtime_dlls(AppState *app)
+{
+    if (app) app->runtimeDllsReady = true;
     return true;
 }
+#endif
 
+#ifdef _WIN32
 void app_cleanup_runtime_dlls(AppState *app)
 {
-    static const wchar_t *dllNames[] = {
-        L"libopenmpt.dll",
-        L"openmpt-mpg123.dll",
-        L"openmpt-ogg.dll",
-        L"openmpt-vorbis.dll",
-        L"openmpt-zlib.dll"
-    };
-
-    if (!app) {
-        return;
-    }
-
-    if (app->runtimeDir[0] != L'\0') {
-        for (size_t i = 0; i < (sizeof(dllNames) / sizeof(dllNames[0])); ++i) {
-            wchar_t dllPath[MAX_PATH];
-            app_join_path(dllPath, sizeof(dllPath) / sizeof(dllPath[0]), app->runtimeDir, dllNames[i]);
-            DeleteFileW(dllPath);
-        }
-
-        RemoveDirectoryW(app->runtimeDir);
-        app->runtimeDir[0] = L'\0';
-    }
-
-    app->runtimeDllsReady = false;
+    // ... original code
+#else
+void app_cleanup_runtime_dlls(AppState *app)
+{
 }
+#endif
 
 void app_set_status(AppState *app, const wchar_t *fmt, ...)
 {

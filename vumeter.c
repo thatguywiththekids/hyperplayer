@@ -1,7 +1,7 @@
 #include "vumeter.h"
 #include "player.h"
 
-#include <windows.h>
+#include "portability.h"
 #include <stdbool.h>
 #include <stdlib.h>
 

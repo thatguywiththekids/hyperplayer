@@ -1,9 +1,7 @@
 #ifndef APP_H
 #define APP_H
 
-#define COBJMACROS
-#include <windows.h>
-#include <wincodec.h>
+#include "portability.h"
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -98,6 +96,8 @@ bool app_ini_get_string(const AppState *app, const wchar_t *section, const wchar
 int app_ini_get_int(const AppState *app, const wchar_t *section, const wchar_t *key, int defaultValue);
 double app_ini_get_double(const AppState *app, const wchar_t *section, const wchar_t *key, double defaultValue);
 COLORREF app_ini_get_color(const AppState *app, const wchar_t *section, const wchar_t *key, COLORREF defaultValue);
+
+void app_join_path(wchar_t *dst, size_t dstCount, const wchar_t *dir, const wchar_t *name);
 
 bool app_load_resource_bytes(WORD resourceId, const void **outData, DWORD *outSize);
 bool app_prepare_runtime_dlls(AppState *app);
