@@ -214,7 +214,7 @@ void sample_list_usage_trigger_draw(AppState *app, HDC hdc)
     HBITMAP oldBmp;
     RECT r;
     BLENDFUNCTION blend;
-    unsigned int *pixel;
+    unsigned int *pixel = NULL;
 
     if (!app || !hdc) {
         return;

@@ -1,5 +1,9 @@
 #include "action_buttons.h"
+#ifdef _WIN32
 #include "directory_listing_win32.h"
+#else
+#include "directory_listing_posix.h"
+#endif
 #include "player.h"
 
 static void play_and_show_tunnel(AppState *app)

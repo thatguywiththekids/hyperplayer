@@ -14,6 +14,9 @@ typedef enum { GDI_TYPE_FONT, GDI_TYPE_PEN, GDI_TYPE_BRUSH, GDI_TYPE_BITMAP } Gd
 typedef struct {
     GdiType type;
     void *ptr;
+    void *bits;
+    int width;
+    int height;
     COLORREF color; // For pens/brushes
     bool isStock;
 } GdiObj;
@@ -23,6 +26,9 @@ static GdiObj* create_gdi_obj(GdiType type, void *ptr) {
     if (obj) {
         obj->type = type;
         obj->ptr = ptr;
+        obj->bits = NULL;
+        obj->width = 0;
+        obj->height = 0;
         obj->color = 0;
         obj->isStock = false;
     }
@@ -141,11 +147,12 @@ void DeleteObject(void* ho) {
     if (!ho) return;
     GdiObj *obj = (GdiObj*)ho;
     if (obj->isStock) return;
-    
+
     if (obj->type == GDI_TYPE_FONT) {
         if (obj->ptr) TTF_CloseFont((TTF_Font*)obj->ptr);
     } else if (obj->type == GDI_TYPE_BITMAP) {
         if (obj->ptr) SDL_DestroyTexture((SDL_Texture*)obj->ptr);
+        if (obj->bits) free(obj->bits);
     }
     free(obj);
 }
@@ -153,10 +160,9 @@ void DeleteObject(void* ho) {
 void* SelectObject(HDC hdc, void* h) {
     if (!hdc || !h) return NULL;
     GdiObj *obj = (GdiObj*)h;
-    void *old = h; // Simplified: Win32 returns the old object of the same type
-    
+    void *old = h; 
+
     if (obj->type == GDI_TYPE_FONT) {
-        // We don't track old font object pointers perfectly, but let's return something
         hdc->font = (TTF_Font*)obj->ptr;
     } else if (obj->type == GDI_TYPE_PEN) {
         hdc->penColor.r = GetRValue(obj->color);
@@ -169,6 +175,8 @@ void* SelectObject(HDC hdc, void* h) {
         hdc->penColor.b = GetBValue(obj->color);
         hdc->penColor.a = 255;
     } else if (obj->type == GDI_TYPE_BITMAP) {
+        old = hdc->selectedBitmap;
+        hdc->selectedBitmap = obj;
         if (hdc->target != obj->ptr) {
             hdc->target = (SDL_Texture*)obj->ptr;
             SDL_SetRenderTarget(hdc->renderer, hdc->target);
@@ -176,7 +184,6 @@ void* SelectObject(HDC hdc, void* h) {
     }
     return old;
 }
-
 int SetBkMode(HDC hdc, int mode) { return 0; }
 
 COLORREF SetTextColor(HDC hdc, COLORREF color) {
@@ -212,6 +219,30 @@ bool TextOutW(HDC hdc, int x, int y, const wchar_t* lpString, int c) {
     SDL_DestroyTexture(texture);
     SDL_DestroySurface(surface);
     return true;
+}
+
+bool GetTextExtentPoint32W(HDC hdc, const wchar_t* lpString, int c, SIZE* psiz) {
+    if (!hdc || !hdc->font || !lpString || !psiz) return false;
+
+    wchar_t buf[4096];
+    const wchar_t *toRender = lpString;
+    if (c >= 0 && c < 4095) {
+        wcsncpy(buf, lpString, c);
+        buf[c] = L'\0';
+        toRender = buf;
+    }
+
+    char mbs[4096];
+    wcstombs(mbs, toRender, sizeof(mbs));
+    mbs[4095] = '\0';
+
+    int w, h;
+    if (TTF_GetStringSize(hdc->font, mbs, 0, &w, &h)) {
+        psiz->cx = w;
+        psiz->cy = h;
+        return true;
+    }
+    return false;
 }
 
 int DrawTextW(HDC hdc, wchar_t* lpchText, int cchText, RECT* lprc, UINT format) {
@@ -304,6 +335,10 @@ bool SetPixelV(HDC hdc, int x, int y, COLORREF color) {
 
 bool AlphaBlend(HDC hdcDest, int xoriginDest, int yoriginDest, int wdest, int hdest, HDC hdcSrc, int xoriginSrc, int yoriginSrc, int wsrc, int hsrc, BLENDFUNCTION ftn) {
     if (!hdcDest || !hdcSrc || !hdcSrc->target) return false;
+    GdiObj *srcObj = (GdiObj*)hdcSrc->selectedBitmap;
+    if (srcObj && srcObj->bits) {
+        SDL_UpdateTexture((SDL_Texture*)srcObj->ptr, NULL, srcObj->bits, srcObj->width * 4);
+    }
     SDL_FRect src = { (float)xoriginSrc, (float)yoriginSrc, (float)wsrc, (float)hsrc };
     SDL_FRect dst = { (float)xoriginDest, (float)yoriginDest, (float)wdest, (float)hdest };
     SDL_SetTextureAlphaMod(hdcSrc->target, ftn.SourceConstantAlpha);
@@ -326,18 +361,32 @@ bool DeleteDC(HDC hdc) {
 
 HBITMAP CreateCompatibleBitmap(HDC hdc, int cx, int cy) {
     SDL_Texture *tex = SDL_CreateTexture(hdc->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, (float)cx, (float)cy);
-    return (HBITMAP)create_gdi_obj(GDI_TYPE_BITMAP, tex);
+    GdiObj *obj = create_gdi_obj(GDI_TYPE_BITMAP, tex);
+    if (obj) {
+        obj->width = cx;
+        obj->height = cy;
+    }
+    return (HBITMAP)obj;
 }
 
 HBITMAP CreateDIBSection(HDC hdc, const BITMAPINFO* pbmi, UINT usage, void** ppvBits, HANDLE hSection, DWORD offset) {
-    SDL_Texture *tex = SDL_CreateTexture(hdc->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, (float)pbmi->bmiHeader.biWidth, (float)abs(pbmi->bmiHeader.biHeight));
+    int w = pbmi->bmiHeader.biWidth;
+    int h = abs(pbmi->bmiHeader.biHeight);
+    SDL_Texture *tex = SDL_CreateTexture(hdc->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, (float)w, (float)h);
     if (!tex) return NULL;
-    return (HBITMAP)create_gdi_obj(GDI_TYPE_BITMAP, tex);
+    GdiObj *obj = create_gdi_obj(GDI_TYPE_BITMAP, tex);
+    if (obj) {
+        obj->width = w;
+        obj->height = h;
+        obj->bits = calloc(1, (size_t)w * (size_t)h * 4);
+        if (ppvBits) *ppvBits = obj->bits;
+    }
+    return (HBITMAP)obj;
 }
 
 void* GetStockObject(int fnObject) {
-    static GdiObj whiteBrush = { GDI_TYPE_BRUSH, NULL, 0xFFFFFFFF, true };
-    static GdiObj nullPen = { GDI_TYPE_PEN, NULL, 0, true };
+    static GdiObj whiteBrush = { .type = GDI_TYPE_BRUSH, .ptr = NULL, .bits = NULL, .width = 0, .height = 0, .color = 0xFFFFFFFF, .isStock = true };
+    static GdiObj nullPen = { .type = GDI_TYPE_PEN, .ptr = NULL, .bits = NULL, .width = 0, .height = 0, .color = 0, .isStock = true };
     if (fnObject == WHITE_BRUSH) return &whiteBrush;
     if (fnObject == NULL_PEN) return &nullPen;
     return NULL;

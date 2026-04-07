@@ -70,6 +70,7 @@ typedef struct HDC_REC {
     TTF_Font *font;
     SDL_Texture *target;
     SDL_Texture *savedTarget;
+    void *selectedBitmap;
     POINT currentPos;
 } *HDC;
 
@@ -207,6 +208,7 @@ void* SelectObject(HDC hdc, void* h);
 int SetBkMode(HDC hdc, int mode);
 COLORREF SetTextColor(HDC hdc, COLORREF color);
 bool TextOutW(HDC hdc, int x, int y, const wchar_t* lpString, int c);
+bool GetTextExtentPoint32W(HDC hdc, const wchar_t* lpString, int c, SIZE* psiz);
 int DrawTextW(HDC hdc, wchar_t* lpchText, int cchText, RECT* lprc, UINT format);
 int SaveDC(HDC hdc);
 bool RestoreDC(HDC hdc, int nSavedDC);

@@ -13,6 +13,7 @@
 #include "sample_display.h"
 #include "tunnelvisualizer.h"
 #include "sample_list_usage_trigger.h"
+#include "sample_list.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -170,8 +171,13 @@ bool ui_load_assets(AppState *app)
 {
     wchar_t cursorPath[MAX_PATH];
     app->fonts.pattern = ui_make_font(FONT_FACE, 18, FW_NORMAL);
-    app->fonts.title = ui_make_font(FONT_FACE, 42, FW_BOLD);
+    app->fonts.sampleList = ui_make_font(FONT_FACE, 17, FW_NORMAL);
+    app->fonts.info = ui_make_font(FONT_FACE, 25, FW_NORMAL);
+    app->fonts.info2 = ui_make_font(FONT_FACE, 24, FW_NORMAL);
     app->fonts.dir = ui_make_font(FONT_FACE, 16, FW_NORMAL);
+    app->fonts.driveButtons = ui_make_font(FONT_FACE, 16, FW_NORMAL);
+    app->fonts.waveform = ui_make_font(FONT_FACE, 32, FW_NORMAL);
+    app->fonts.title = ui_make_font(FONT_FACE, 42, FW_BOLD);
     
     ui_load_image_portable(app->backgroundPath, &app->background);
     app->backgroundLoaded = (app->background.pixels != NULL);
@@ -185,8 +191,13 @@ bool ui_load_assets(AppState *app)
 void ui_release_assets(AppState *app)
 {
     ui_delete_font(&app->fonts.pattern);
-    ui_delete_font(&app->fonts.title);
+    ui_delete_font(&app->fonts.sampleList);
+    ui_delete_font(&app->fonts.info);
+    ui_delete_font(&app->fonts.info2);
     ui_delete_font(&app->fonts.dir);
+    ui_delete_font(&app->fonts.driveButtons);
+    ui_delete_font(&app->fonts.waveform);
+    ui_delete_font(&app->fonts.title);
     ui_free_image(&app->background);
 }
 
@@ -212,5 +223,6 @@ void ui_draw(AppState *app, HDC hdc, const RECT *clientRect)
     quadrascope_draw(app, hdc);
     sample_display_draw(app, hdc);
     sample_list_usage_trigger_draw(app, hdc);
+    sample_list_draw(app, hdc);
     player_draw_songinfo(app, hdc);
 }

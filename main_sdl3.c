@@ -81,9 +81,11 @@ int main(int argc, char *argv[]) {
                     break;
                 case SDL_EVENT_MOUSE_BUTTON_DOWN:
                     if (event.button.button == SDL_BUTTON_LEFT) {
-                        if (!directory_listing_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
-                            if (!tunnelvisualizer_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
-                                // Other interactions...
+                        if (!action_buttons_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
+                            if (!directory_listing_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
+                                if (!tunnelvisualizer_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
+                                    // Other interactions...
+                                }
                             }
                         }
                     }
