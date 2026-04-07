@@ -8,6 +8,7 @@
 typedef struct AppConfig {
     wchar_t defaultDir[MAX_PATH];
     int stereoSeparation;
+    int modOctaveOffset;
 } AppConfig;
 
 typedef struct ImageRGBA {

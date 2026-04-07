@@ -626,6 +626,8 @@ static void app_load_config(AppState *app)
     if (app->config.stereoSeparation > 200) {
         app->config.stereoSeparation = 200;
     }
+
+    app->config.modOctaveOffset = app_ini_get_int(app, L"PATTERN", L"MOD_OCTAVE_OFFSET", 0);
 }
 
 #ifdef _WIN32

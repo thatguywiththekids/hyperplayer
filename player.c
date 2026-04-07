@@ -73,6 +73,7 @@ struct PlayerState {
     
     wchar_t currentFile[MAX_PATH];
     wchar_t currentName[256];
+    char modType[32];
 
     SampleCache *sampleCache;
     int sampleCacheCount;
@@ -143,15 +144,60 @@ int player_get_order_pattern(const AppState *app, int order) { return app->playe
 int player_get_pattern_num_rows(const AppState *app, int pattern) { return app->player && app->player->mod ? openmpt_module_get_pattern_num_rows(app->player->mod, pattern) : 0; }
 int player_get_num_channels(const AppState *app) { return app->player && app->player->mod ? openmpt_module_get_num_channels(app->player->mod) : 0; }
 
+static void compact_command(const char *src, char *dst, size_t dstSize, int width, char emptyChar) {
+    if (!src || src[0] == '\0') {
+        for (int i = 0; i < width; ++i) dst[i] = emptyChar;
+        dst[width] = '\0';
+        return;
+    }
+    int j = 0;
+    for (int i = 0; src[i] && j < width; ++i) {
+        if (src[i] != ' ' && src[i] != '.') {
+            dst[j++] = src[i];
+        } else {
+            dst[j++] = emptyChar;
+        }
+    }
+    while (j < width) dst[j++] = emptyChar;
+    dst[width] = '\0';
+}
+
 bool player_format_pattern_cell(const AppState *app, int pattern, int row, int channel, wchar_t *outText, size_t outCount) {
     if (!app->player || !app->player->mod) return false;
-    const char *text = openmpt_module_format_pattern_row_channel_command(app->player->mod, pattern, row, channel, 0);
-    if (text) {
-        mbstowcs(outText, text, outCount);
-        openmpt_free_string(text);
-        return true;
+    
+    char note[16], instr[16], effect[16], param[16];
+    char combined[32];
+    
+    const char *sNote = openmpt_module_format_pattern_row_channel_command(app->player->mod, pattern, row, channel, 0);
+    const char *sInstr = openmpt_module_format_pattern_row_channel_command(app->player->mod, pattern, row, channel, 1);
+    const char *sEffect = openmpt_module_format_pattern_row_channel_command(app->player->mod, pattern, row, channel, 3);
+    const char *sParam = openmpt_module_format_pattern_row_channel_command(app->player->mod, pattern, row, channel, 5);
+    
+    compact_command(sNote, note, 16, 3, '-');
+    compact_command(sInstr, instr, 16, 2, '0');
+    compact_command(sEffect, effect, 16, 1, '0');
+    compact_command(sParam, param, 16, 2, '0');
+    
+    // Apply octave shift for MOD files
+    if (note[0] != '-' && note[2] >= '0' && note[2] <= '9') {
+        if (strcmp(app->player->modType, "mod") == 0) {
+            int octave = note[2] - '0';
+            octave += app->config.modOctaveOffset;
+            if (octave < 0) octave = 0;
+            if (octave > 9) octave = 9;
+            note[2] = '0' + octave;
+        }
     }
-    return false;
+    
+    openmpt_free_string(sNote);
+    openmpt_free_string(sInstr);
+    openmpt_free_string(sEffect);
+    openmpt_free_string(sParam);
+    
+    snprintf(combined, sizeof(combined), "%s %s%s%s", note, instr, effect, param);
+    mbstowcs(outText, combined, outCount);
+    
+    return true;
 }
 
 float player_get_recent_output_level(const AppState *app) {
@@ -318,6 +364,16 @@ bool player_load_module(AppState *app, const wchar_t *absolutePath, const wchar_
     }
     
     p->mod = openmpt_module_ext_get_module(p->mod_ext);
+    
+    // Store module type for format-specific logic
+    const char *type = openmpt_module_get_metadata(p->mod, "type");
+    if (type) {
+        strncpy(p->modType, type, 31);
+        p->modType[31] = '\0';
+        openmpt_free_string(type);
+    } else {
+        p->modType[0] = '\0';
+    }
     
     // Clear cache from previous module
     clear_sample_cache(p);
