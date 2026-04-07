@@ -71,6 +71,7 @@ int main(int argc, char *argv[]) {
     SDL_Event event;
     while (g_running) {
         while (SDL_PollEvent(&event)) {
+            SDL_ConvertEventToRenderCoordinates(g_renderer, &event);
             switch (event.type) {
                 case SDL_EVENT_QUIT:
                     g_running = false;
