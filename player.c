@@ -611,9 +611,32 @@ void player_draw_songinfo(AppState *app, HDC hdc) {
     ui_draw_shadowed_text(hdc, app->fonts.info2, speedText, 931, 164, RGB(0xFF, 0xFF, 0xFF), RGB(0x59, 0x59, 0x59), 3, 3, NULL, 0);
 }
 
-void player_play(AppState *app) { if (app->player) app->player->paused = false; }
-void player_pause(AppState *app) { if (app->player) app->player->paused = true; }
-void player_stop(AppState *app) { if (app->player) app->player->stopped = true; }
+void player_play(AppState *app) {
+    if (app->player) {
+        app->player->paused = false;
+        app->player->stopped = false;
+    }
+}
+
+void player_pause(AppState *app) {
+    if (app->player) {
+        app->player->paused = true;
+    }
+}
+
+void player_stop(AppState *app) {
+    if (app->player) {
+        app->player->stopped = true;
+        app->player->paused = false;
+        if (app->player->mod) {
+            openmpt_module_set_position_seconds(app->player->mod, 0.0);
+        }
+        SDL_ClearAudioStream(app->player->stream);
+        app->player->lastRow = -1;
+        app->player->lastPattern = -1;
+        memset(app->player->channelStates, 0, sizeof(app->player->channelStates));
+    }
+}
 
 bool player_jump_to_order(AppState *app, int step) {
     if (!app->player || !app->player->mod) return false;
