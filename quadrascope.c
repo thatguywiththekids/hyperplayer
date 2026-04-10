@@ -21,105 +21,13 @@ static const ScopeBox g_boxes[4] = {
     {1787, 958, 113, 89}
 };
 
-static bool quadrascope_build_ini_path(wchar_t *path, size_t pathCount)
-{
-    DWORD len;
-    wchar_t *slash;
-
-    if (!path || pathCount == 0) {
-        return false;
-    }
-
-    len = GetModuleFileNameW(NULL, path, (DWORD)pathCount);
-    if (len == 0 || len >= (DWORD)pathCount) {
-        return false;
-    }
-
-    slash = wcsrchr(path, L'\\');
-    if (!slash) {
-        slash = wcsrchr(path, L'/');
-    }
-    if (!slash) {
-        return false;
-    }
-
-    slash[1] = L'\0';
-
-    if (wcslen(path) + wcslen(L"hyperplayer.ini") + 1 > pathCount) {
-        return false;
-    }
-
-    wcscat(path, L"hyperplayer.ini");
-    return true;
-}
-
-static bool quadrascope_parse_hex_color(const wchar_t *text, COLORREF *outColor)
-{
-    const wchar_t *p;
-    wchar_t *endPtr;
-    unsigned long value;
-    unsigned int r;
-    unsigned int g;
-    unsigned int b;
-
-    if (!text || !outColor) {
-        return false;
-    }
-
-    p = text;
-    while (*p == L' ' || *p == L'\t' || *p == L'\r' || *p == L'\n') {
-        ++p;
-    }
-
-    if (*p == L'#') {
-        ++p;
-    } else if (p[0] == L'0' && (p[1] == L'x' || p[1] == L'X')) {
-        p += 2;
-    }
-
-    value = wcstoul(p, &endPtr, 16);
-    if (endPtr == p || value > 0xFFFFFFUL) {
-        return false;
-    }
-
-    while (*endPtr == L' ' || *endPtr == L'\t' || *endPtr == L'\r' || *endPtr == L'\n') {
-        ++endPtr;
-    }
-
-    if (*endPtr != L'\0') {
-        return false;
-    }
-
-    r = (unsigned int)((value >> 16) & 0xFF);
-    g = (unsigned int)((value >> 8) & 0xFF);
-    b = (unsigned int)(value & 0xFF);
-
-    *outColor = RGB(r, g, b);
-    return true;
-}
-
-static COLORREF quadrascope_get_waveform_color(void)
+static COLORREF quadrascope_get_waveform_color(AppState *app)
 {
     static bool loaded = false;
     static COLORREF color = RGB(0xFF, 0xDD, 0x00);
 
-    if (!loaded) {
-        wchar_t iniPath[MAX_PATH];
-        wchar_t value[64];
-
-        if (quadrascope_build_ini_path(iniPath, sizeof(iniPath) / sizeof(iniPath[0]))) {
-            GetPrivateProfileStringW(
-                L"QUADRASCOPE",
-                L"QUADRACOLOR",
-                L"FFDD00",
-                value,
-                (DWORD)(sizeof(value) / sizeof(value[0])),
-                iniPath
-            );
-
-            quadrascope_parse_hex_color(value, &color);
-        }
-
+    if (!loaded && app) {
+        color = app_ini_get_color(app, L"QUADRASCOPE", L"QUADRACOLOR", RGB(0xFF, 0xDD, 0x00));
         loaded = true;
     }
 
@@ -212,6 +120,7 @@ static double compute_window_start(int sampleCount, double currentPos, int width
 }
 
 static void draw_scope_from_state(
+    AppState *app,
     HDC hdc,
     const float *values,
     int sampleCount,
@@ -276,7 +185,7 @@ static void draw_scope_from_state(
     savedDc = SaveDC(hdc);
     IntersectClipRect(hdc, box->x, box->y, box->x + box->w, box->y + box->h);
 
-    pen = CreatePen(PS_SOLID, 1, quadrascope_get_waveform_color());
+    pen = CreatePen(PS_SOLID, 1, quadrascope_get_waveform_color(app));
     oldPen = (HPEN)SelectObject(hdc, pen);
 
     Polyline(hdc, points, box->w);
@@ -307,6 +216,6 @@ void quadrascope_draw(AppState *app, HDC hdc)
             continue;
         }
 
-        draw_scope_from_state(hdc, values, sampleCount, loopStart, loopLength, &state, &g_boxes[channel - 1]);
+        draw_scope_from_state(app, hdc, values, sampleCount, loopStart, loopLength, &state, &g_boxes[channel - 1]);
     }
 }

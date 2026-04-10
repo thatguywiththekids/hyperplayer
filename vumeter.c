@@ -191,8 +191,6 @@ void vumeter_draw(AppState *app, HDC hdc)
     int total;
     HPEN pen;
     HPEN oldPen;
-    HBRUSH oldBrush;
-    BLENDFUNCTION blend;
 
     (void)app;
 
@@ -209,53 +207,15 @@ void vumeter_draw(AppState *app, HDC hdc)
 
     pen = (HPEN)GetStockObject(NULL_PEN);
     oldPen = (HPEN)SelectObject(hdc, pen);
-    oldBrush = NULL;
-
-    blend.BlendOp = AC_SRC_OVER;
-    blend.BlendFlags = 0;
-    blend.SourceConstantAlpha = g_config.alpha;
-    blend.AlphaFormat = 0;
 
     for (int i = 0; i < lit && i < total; ++i) {
         const BoxRect *box = &g_boxes[i];
         COLORREF color = get_box_color(i, total);
-        HDC memDC;
-        HBITMAP bmp;
-        HBITMAP oldBmp;
-        HBRUSH brush;
-        RECT r;
-
-        memDC = CreateCompatibleDC(hdc);
-        if (!memDC) {
-            continue;
-        }
-
-        bmp = CreateCompatibleBitmap(hdc, box->w, box->h);
-        if (!bmp) {
-            DeleteDC(memDC);
-            continue;
-        }
-
-        oldBmp = (HBITMAP)SelectObject(memDC, bmp);
-
-        r.left = 0;
-        r.top = 0;
-        r.right = box->w;
-        r.bottom = box->h;
-
-        brush = CreateSolidBrush(color);
-        FillRect(memDC, &r, brush);
+        HBRUSH brush = CreateSolidBrush(color);
+        RECT r = { box->x, box->y, box->x + box->w, box->y + box->h };
+        FillRect(hdc, &r, brush);
         DeleteObject(brush);
-
-        AlphaBlend(hdc, box->x, box->y, box->w, box->h, memDC, 0, 0, box->w, box->h, blend);
-
-        SelectObject(memDC, oldBmp);
-        DeleteObject(bmp);
-        DeleteDC(memDC);
     }
 
-    if (oldBrush) {
-        SelectObject(hdc, oldBrush);
-    }
     SelectObject(hdc, oldPen);
 }

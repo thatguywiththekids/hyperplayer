@@ -376,7 +376,6 @@ static void fft_inplace(double *re, double *im, int n)
             re[i] = re[j];
             im[i] = im[j];
             re[j] = tr;
-            re[j] = tr;
             im[j] = ti;
         }
     }

@@ -13,6 +13,7 @@ typedef struct SamplePreviewPoint {
 typedef struct QuadrascopeState {
     int sampleIndex;
     double samplePos;
+    double frequency;
     int scopeStride;
     float sampleVolume;
     float vu;

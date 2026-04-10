@@ -69,7 +69,15 @@ int main(int argc, char *argv[]) {
     hdc_rec.renderer = g_renderer;
 
     SDL_Event event;
+    uint64_t lastTime = SDL_GetTicksNS();
+    
     while (g_running) {
+        uint64_t currentTime = SDL_GetTicksNS();
+        double dt = (double)(currentTime - lastTime) / 1000000000.0;
+        lastTime = currentTime;
+
+        if (dt > 0.1) dt = 0.1; // Cap dt
+
         while (SDL_PollEvent(&event)) {
             SDL_ConvertEventToRenderCoordinates(g_renderer, &event);
             switch (event.type) {
@@ -142,7 +150,12 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        player_update(&app, 0.016);
+        player_update(&app, dt);
+        tunnelvisualizer_update(&app, dt);
+        spectrumanalyzer_update(&app, dt);
+        vumeter_update(&app, dt);
+        sample_display_update(&app, dt);
+        sample_list_usage_trigger_update(&app, dt);
 
         SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
         SDL_RenderClear(g_renderer);

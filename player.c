@@ -18,6 +18,8 @@
 
 static const COLORREF COLOR_INFO = RGB(0xBB, 0xBB, 0xBB);
 
+#define SAMPLE_PREVIEW_WIDTH 555
+
 typedef struct SampleCache {
     float *values;
     int count;
@@ -26,7 +28,34 @@ typedef struct SampleCache {
     int volume;
     int size;
     wchar_t name[64];
+    SamplePreviewPoint preview[SAMPLE_PREVIEW_WIDTH];
+    int previewCount;
 } SampleCache;
+
+static float signed8_to_float(unsigned char byteValue) {
+    if (byteValue > 127) return ((float)((int)byteValue - 256)) / 128.0f;
+    return ((float)byteValue) / 128.0f;
+}
+
+static void build_sample_preview(const float *sampleValues, int sampleLength, SamplePreviewPoint *outPreview, int *outCount) {
+    if (!sampleValues || sampleLength <= 0 || !outPreview || !outCount) return;
+    int width = SAMPLE_PREVIEW_WIDTH;
+    for (int i = 0; i < width; ++i) {
+        int startIndex = (i * sampleLength) / width;
+        int endIndex = (((i + 1) * sampleLength) / width) - 1;
+        if (endIndex < startIndex) endIndex = startIndex;
+        if (endIndex >= sampleLength) endIndex = sampleLength - 1;
+        float minv = 1.0f, maxv = -1.0f;
+        for (int j = startIndex; j <= endIndex; ++j) {
+            float v = sampleValues[j];
+            if (v < minv) minv = v;
+            if (v > maxv) maxv = v;
+        }
+        outPreview[i].minValue = minv;
+        outPreview[i].maxValue = maxv;
+    }
+    *outCount = width;
+}
 
 static unsigned short u16be(const unsigned char *bytes, size_t index, size_t size) {
     if (!bytes || index + 1 >= size) return 0;
@@ -74,13 +103,95 @@ struct PlayerState {
     wchar_t currentFile[MAX_PATH];
     wchar_t currentName[256];
     char modType[32];
+    float recentOutputLevel;
 
     SampleCache *sampleCache;
     int sampleCacheCount;
+
+    int lastPattern;
+    int lastRow;
+    QuadrascopeState channelStates[4];
 };
 
 static void clear_sample_cache(PlayerState *p);
 static void ensure_sample_cache(PlayerState *p);
+
+static const char *g_notes[12] = {
+    "C-","C#","D-","D#","E-","F-","F#","G-","G#","A-","A#","B-"
+};
+
+static double note_to_hz(const char *note) {
+    char name[3];
+    int octave = 0;
+    int idx = -1;
+    int midi;
+
+    if (!note || strcmp(note, "---") == 0) return 0.0;
+
+    name[0] = note[0];
+    name[1] = note[1];
+    name[2] = '\0';
+
+    if (!isdigit((unsigned char)note[2])) return 0.0;
+    octave = note[2] - '0';
+
+    for (int i = 0; i < 12; ++i) {
+        if (strcmp(g_notes[i], name) == 0) {
+            idx = i;
+            break;
+        }
+    }
+
+    if (idx < 0) return 0.0;
+
+    midi = (octave + 1) * 12 + idx;
+    return 440.0 * pow(2.0, ((double)midi - 69.0) / 12.0);
+}
+
+static void update_channel_state_from_row(PlayerState *p) {
+    if (!p || !p->mod) return;
+    int pattern = openmpt_module_get_current_pattern(p->mod);
+    int row = openmpt_module_get_current_row(p->mod);
+    int numChannels = openmpt_module_get_num_channels(p->mod);
+    
+    for (int channel = 0; channel < 4; ++channel) {
+        QuadrascopeState *state = &p->channelStates[channel];
+        if (channel >= numChannels) {
+            state->active = false;
+            continue;
+        }
+
+        const char *sNote = openmpt_module_format_pattern_row_channel_command(p->mod, pattern, row, channel, 0);
+        const char *sInstr = openmpt_module_format_pattern_row_channel_command(p->mod, pattern, row, channel, 1);
+        
+        int sampleIndex = 0;
+        if (sInstr && sInstr[0] != '.' && sInstr[0] != ' ') {
+            sampleIndex = (int)strtol(sInstr, NULL, 16);
+        }
+
+        if (sampleIndex > 0) {
+            state->sampleIndex = sampleIndex;
+            state->active = true;
+            state->scopeHold = 0.20;
+            state->sampleVolume = 1.0f;
+            state->samplePos = 1.0;
+            state->scopeStride = 1;
+        }
+
+        if (sNote && sNote[0] != '.' && sNote[0] != '-') {
+            double freq = note_to_hz(sNote);
+            if (freq > 0.0) {
+                state->frequency = freq;
+                state->samplePos = 1.0;
+                state->active = true;
+                state->scopeHold = 0.20;
+            }
+        }
+
+        openmpt_free_string(sNote);
+        openmpt_free_string(sInstr);
+    }
+}
 
 bool player_init(AppState *app) {
     PlayerState *p = (PlayerState *)calloc(1, sizeof(PlayerState));
@@ -201,10 +312,8 @@ bool player_format_pattern_cell(const AppState *app, int pattern, int row, int c
 }
 
 float player_get_recent_output_level(const AppState *app) {
-    if (!app->player || !app->player->mod) return 0.0f;
-    float maxL = (float)openmpt_module_get_current_channel_vu_mono(app->player->mod, 0);
-    float maxR = (float)openmpt_module_get_current_channel_vu_mono(app->player->mod, 1);
-    return (maxL > maxR) ? maxL : maxR;
+    if (!app->player) return 0.0f;
+    return app->player->recentOutputLevel;
 }
 
 bool player_get_recent_mono_window(const AppState *app, float *outSamples, int count) {
@@ -219,9 +328,15 @@ bool player_get_recent_mono_window(const AppState *app, float *outSamples, int c
 
 bool player_get_quadrascope_state(const AppState *app, int channel1Based, QuadrascopeState *outState) {
     if (!app->player || !app->player->mod || !outState) return false;
-    memset(outState, 0, sizeof(QuadrascopeState));
-    outState->active = true;
-    outState->vu = (float)openmpt_module_get_current_channel_vu_mono(app->player->mod, channel1Based - 1);
+    int idx = channel1Based - 1;
+    if (idx < 0 || idx >= 4) return false;
+    *outState = app->player->channelStates[idx];
+    int numChannels = openmpt_module_get_num_channels(app->player->mod);
+    if (idx < numChannels) {
+        outState->vu = (float)openmpt_module_get_current_channel_vu_mono(app->player->mod, idx);
+    } else {
+        outState->vu = 0.0f;
+    }
     return true;
 }
 
@@ -253,6 +368,18 @@ static void clear_sample_cache(PlayerState *p) {
 static void parse_mod_samples(PlayerState *p, const unsigned char *data, size_t size) {
     if (!p || !data || size < 600) return;
     int sampleCount = has_known_31_sample_signature(data, size) ? 31 : 15;
+    int channels = 4;
+    size_t ordersOffset = (sampleCount == 31) ? 952 : 472;
+    size_t patternsOffset = (sampleCount == 31) ? 1084 : 600;
+    int highestPattern = 0;
+    for (int i = 0; i < 128; ++i) {
+        size_t off = ordersOffset + i;
+        if (off >= size) break;
+        if (data[off] > highestPattern) highestPattern = data[off];
+    }
+    size_t sampleDataOffset = patternsOffset + (size_t)(highestPattern + 1) * 64 * channels * 4;
+    size_t cursor = sampleDataOffset;
+
     ensure_sample_cache(p);
     for (int i = 0; i < sampleCount && i < p->sampleCacheCount; ++i) {
         size_t base = 20 + (size_t)i * 30;
@@ -263,6 +390,18 @@ static void parse_mod_samples(PlayerState *p, const unsigned char *data, size_t 
         sc->volume = (int)data[base + 25];
         sc->loopStart = (int)u16be(data, base + 26, size) * 2;
         sc->loopLength = (int)u16be(data, base + 28, size) * 2;
+
+        if (sc->size > 0 && cursor + sc->size <= size) {
+            sc->values = (float *)malloc(sc->size * sizeof(float));
+            if (sc->values) {
+                for (int j = 0; j < sc->size; ++j) {
+                    sc->values[j] = signed8_to_float(data[cursor + j]);
+                }
+                sc->count = sc->size;
+                build_sample_preview(sc->values, sc->count, sc->preview, &sc->previewCount);
+            }
+            cursor += sc->size;
+        }
     }
 }
 
@@ -275,6 +414,7 @@ static void ensure_sample_cache(PlayerState *p) {
     for (int i = 0; i < numSamples; ++i) {
         SampleCache *sc = &p->sampleCache[i];
         sc->volume = 64; // Default
+        sc->previewCount = 0;
         const char *name = openmpt_module_get_sample_name(p->mod, i);
         if (name) {
             mbstowcs(sc->name, name, 64);
@@ -294,13 +434,10 @@ bool player_get_sample_values(const AppState *app, int sampleIndex1Based, const 
     SampleCache *sc = &p->sampleCache[idx];
     if (!sc->values) {
         // Extract using libopenmpt_ext
-        // We need the 'interactive' interface
         openmpt_module_ext_interface_interactive *interactive = NULL;
         if (p->mod_ext && openmpt_module_ext_get_interface(p->mod_ext, LIBOPENMPT_EXT_C_INTERFACE_INTERACTIVE, &interactive, sizeof(interactive)) && interactive) {
-            // This is a simplified extraction. 
-            // In a real implementation we'd use interactive->get_sample_data_float
-            // but let's see if we can get it via metadata first for common MODs
-            // Actually, let's just stub it for now to avoid overcomplicating.
+            // Note: interactive extraction not fully implemented here yet
+            // but we have it for MODs via parse_mod_samples
         }
     }
     
@@ -316,7 +453,18 @@ bool player_get_sample_values(const AppState *app, int sampleIndex1Based, const 
 }
 
 bool player_get_sample_preview(const AppState *app, int sampleIndex1Based, const SamplePreviewPoint **outPreview, int *outCount) {
-    return false; // Still complex
+    if (!app->player || !app->player->mod || sampleIndex1Based <= 0) return false;
+    PlayerState *p = app->player;
+    ensure_sample_cache(p);
+    int idx = sampleIndex1Based - 1;
+    if (idx >= p->sampleCacheCount) return false;
+    SampleCache *sc = &p->sampleCache[idx];
+    if (sc->previewCount > 0) {
+        if (outPreview) *outPreview = sc->preview;
+        if (outCount) *outCount = sc->previewCount;
+        return true;
+    }
+    return false;
 }
 
 int player_get_nonempty_sample_count(const AppState *app) {
@@ -405,6 +553,10 @@ bool player_load_module(AppState *app, const wchar_t *absolutePath, const wchar_
     SDL_ClearAudioStream(p->stream);
     p->stopped = false;
     p->paused = false;
+
+    p->lastRow = -1;
+    p->lastPattern = -1;
+    memset(p->channelStates, 0, sizeof(p->channelStates));
     
     return true;
 }
@@ -477,9 +629,31 @@ bool player_restart_current_order(AppState *app) {
     return true;
 }
 
+#define SCOPE_ADVANCE_SCALE 16.0
+
 void player_update(AppState *app, double dt) {
     PlayerState *p = app->player;
     if (!p || !p->mod || p->paused || p->stopped) return;
+
+    int curPattern = openmpt_module_get_current_pattern(p->mod);
+    int curRow = openmpt_module_get_current_row(p->mod);
+
+    if (curPattern != p->lastPattern || curRow != p->lastRow) {
+        update_channel_state_from_row(p);
+        p->lastPattern = curPattern;
+        p->lastRow = curRow;
+    }
+
+    for (int i = 0; i < 4; i++) {
+        QuadrascopeState *state = &p->channelStates[i];
+        if (state->scopeHold > 0.0) {
+            state->scopeHold -= dt;
+            if (state->scopeHold < 0.0) state->scopeHold = 0.0;
+        }
+        if (state->active && state->frequency > 0.0) {
+            state->samplePos += state->frequency * dt * SCOPE_ADVANCE_SCALE;
+        }
+    }
     
     int targetBytes = (int)(PLAYER_SAMPLE_RATE * 0.1 * 2 * sizeof(int16_t));
     int currentBytes = SDL_GetAudioStreamQueued(p->stream);
@@ -492,10 +666,17 @@ void player_update(AppState *app, double dt) {
             SDL_PutAudioStreamData(p->stream, buffer, (int)(read * 2 * sizeof(int16_t)));
             currentBytes += (int)(read * 2 * sizeof(int16_t));
             
+            float accum = 0.0f;
             for (size_t i = 0; i < read; ++i) {
-                float s = (float)buffer[i * 2] / 32768.0f;
-                p->audioHistory[p->audioHistoryWritePos] = s;
+                float l = (float)buffer[i * 2] / 32768.0f;
+                float r = (float)buffer[i * 2 + 1] / 32768.0f;
+                float mono = (l + r) * 0.5f;
+                p->audioHistory[p->audioHistoryWritePos] = mono;
                 p->audioHistoryWritePos = (p->audioHistoryWritePos + 1) % AUDIO_HISTORY_SIZE;
+                accum += (mono < 0.0f) ? -mono : mono;
+            }
+            if (read > 0) {
+                p->recentOutputLevel = accum / (float)read;
             }
         } else {
             if (!p->loopEnabled) {
