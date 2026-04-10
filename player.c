@@ -650,6 +650,12 @@ void player_update(AppState *app, double dt) {
             state->scopeHold -= dt;
             if (state->scopeHold < 0.0) state->scopeHold = 0.0;
         }
+
+        float vu = (float)openmpt_module_get_current_channel_vu_mono(p->mod, i);
+        if (vu < 0.001f && state->scopeHold <= 0.0) {
+            state->active = false;
+        }
+
         if (state->active && state->frequency > 0.0) {
             state->samplePos += state->frequency * dt * SCOPE_ADVANCE_SCALE;
         }

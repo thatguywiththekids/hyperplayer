@@ -61,95 +61,16 @@ static void copy_wstr_local(wchar_t *dst, size_t dstCount, const wchar_t *src)
     dst[dstCount - 1] = L'\0';
 }
 
-static void build_ini_path(wchar_t *path, size_t pathCount)
+static void sample_list_usage_trigger_load_config(AppState *app)
 {
-    DWORD len;
-    const wchar_t *iniName = L"hyperplayer.ini";
-    size_t iniNameLen;
-
-    if (!path || pathCount == 0) {
-        return;
-    }
-
-    len = GetModuleFileNameW(NULL, path, (DWORD)pathCount);
-    if (len == 0 || len >= pathCount) {
-        copy_wstr_local(path, pathCount, iniName);
-        return;
-    }
-
-    while (len > 0) {
-        wchar_t ch = path[len - 1];
-        if (ch == L'\\' || ch == L'/') {
-            break;
-        }
-        --len;
-    }
-
-    if (len == 0) {
-        copy_wstr_local(path, pathCount, iniName);
-        return;
-    }
-
-    path[len] = L'\0';
-
-    iniNameLen = wcslen(iniName);
-    if ((size_t)len + iniNameLen + 1 > pathCount) {
-        copy_wstr_local(path, pathCount, iniName);
-        return;
-    }
-
-    wcsncpy(path + len, iniName, pathCount - len - 1);
-    path[pathCount - 1] = L'\0';
-}
-
-static void sample_list_usage_trigger_load_config(void)
-{
-    wchar_t iniPath[MAX_PATH];
-    wchar_t value[64];
-    wchar_t *endPtr;
-    unsigned int transparencyPercent;
-    double fadeValue;
     ULONGLONG now = GetTickCount64();
 
     if (g_config.loaded && (now - g_config.lastLoadTick) < 250) {
         return;
     }
 
-    g_config.bgTransparency = 0.54f;
-    g_config.bgFade = 0.8333333f;
-
-    build_ini_path(iniPath, sizeof(iniPath) / sizeof(iniPath[0]));
-
-    transparencyPercent = GetPrivateProfileIntW(
-        L"SAMPLELIST",
-        L"BGTRANSPARENCY",
-        54,
-        iniPath
-    );
-
-    if (transparencyPercent > 100) {
-        transparencyPercent = 100;
-    }
-
-    g_config.bgTransparency = (float)transparencyPercent / 100.0f;
-
-    GetPrivateProfileStringW(
-        L"SAMPLELIST",
-        L"BGFADE",
-        L"0.8333333",
-        value,
-        (DWORD)(sizeof(value) / sizeof(value[0])),
-        iniPath
-    );
-
-    endPtr = NULL;
-    fadeValue = wcstod(value, &endPtr);
-    if (endPtr != value) {
-        if (fadeValue < 0.0) {
-            fadeValue = 0.0;
-        }
-        g_config.bgFade = (float)fadeValue;
-    }
+    g_config.bgTransparency = (float)app_ini_get_int(app, L"SAMPLELIST", L"BGTRANSPARENCY", 54) / 100.0f;
+    g_config.bgFade = (float)app_ini_get_double(app, L"SAMPLELIST", L"BGFADE", 0.8333333);
 
     g_config.lastLoadTick = now;
     g_config.loaded = true;
@@ -163,7 +84,7 @@ void sample_list_usage_trigger_update(AppState *app, double dt)
         return;
     }
 
-    sample_list_usage_trigger_load_config();
+    sample_list_usage_trigger_load_config(app);
 
     if (!player_is_loaded(app)) {
         if (g_lastFile[0] != L'\0') {
@@ -246,7 +167,7 @@ void sample_list_usage_trigger_draw(AppState *app, HDC hdc)
     oldBmp = (HBITMAP)SelectObject(memDC, bmp);
 
     if (pixel) {
-        *pixel = 0x00FFFFFFu;
+        *pixel = 0xFFFFFFFFu;
     } else {
         r.left = 0;
         r.top = 0;

@@ -334,16 +334,20 @@ bool SetPixelV(HDC hdc, int x, int y, COLORREF color) {
 }
 
 bool AlphaBlend(HDC hdcDest, int xoriginDest, int yoriginDest, int wdest, int hdest, HDC hdcSrc, int xoriginSrc, int yoriginSrc, int wsrc, int hsrc, BLENDFUNCTION ftn) {
-    if (!hdcDest || !hdcSrc || !hdcSrc->target) return false;
+    if (!hdcDest || !hdcSrc) return false;
     GdiObj *srcObj = (GdiObj*)hdcSrc->selectedBitmap;
-    if (srcObj && srcObj->bits) {
-        SDL_UpdateTexture((SDL_Texture*)srcObj->ptr, NULL, srcObj->bits, srcObj->width * 4);
+    if (!srcObj || srcObj->type != GDI_TYPE_BITMAP || !srcObj->ptr) return false;
+    
+    SDL_Texture *tex = (SDL_Texture*)srcObj->ptr;
+
+    if (srcObj->bits) {
+        SDL_UpdateTexture(tex, NULL, srcObj->bits, srcObj->width * 4);
     }
     SDL_FRect src = { (float)xoriginSrc, (float)yoriginSrc, (float)wsrc, (float)hsrc };
     SDL_FRect dst = { (float)xoriginDest, (float)yoriginDest, (float)wdest, (float)hdest };
-    SDL_SetTextureAlphaMod(hdcSrc->target, ftn.SourceConstantAlpha);
-    SDL_SetTextureBlendMode(hdcSrc->target, SDL_BLENDMODE_BLEND);
-    SDL_RenderTexture(hdcDest->renderer, hdcSrc->target, &src, &dst);
+    SDL_SetTextureAlphaMod(tex, ftn.SourceConstantAlpha);
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+    SDL_RenderTexture(hdcDest->renderer, tex, &src, &dst);
     return true;
 }
 
