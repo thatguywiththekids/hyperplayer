@@ -20,72 +20,9 @@ static const COLORREF COLOR_SHADOW = RGB(0x59, 0x59, 0x59);
 static COLORREF g_colorWaveform = RGB(0xFF, 0xDD, 0x00);
 static bool g_configLoaded = false;
 
-static void get_ini_path(wchar_t *path, size_t pathCount)
+static void load_sample_display_config(AppState *app)
 {
-    DWORD len;
-    wchar_t *slash;
-
-    if (!path || pathCount == 0) {
-        return;
-    }
-
-    path[0] = L'\0';
-
-    len = GetModuleFileNameW(NULL, path, (DWORD)pathCount);
-    if (len == 0 || len >= pathCount) {
-        swprintf(path, pathCount, L"hyperplayer.ini");
-        return;
-    }
-
-    slash = wcsrchr(path, L'\\');
-    if (slash) {
-        slash[1] = L'\0';
-        wcsncat(path, L"hyperplayer.ini", pathCount - wcslen(path) - 1);
-    } else {
-        swprintf(path, pathCount, L"hyperplayer.ini");
-    }
-}
-
-static COLORREF parse_ini_hex_color(const wchar_t *text, COLORREF fallback)
-{
-    unsigned int value = 0;
-
-    if (!text || !*text) {
-        return fallback;
-    }
-
-    while (*text == L' ' || *text == L'\t') {
-        text++;
-    }
-
-    if (swscanf(text, L"%x", &value) != 1) {
-        return fallback;
-    }
-
-    return RGB(
-        (value >> 16) & 0xFF,
-        (value >> 8) & 0xFF,
-        value & 0xFF
-    );
-}
-
-static void load_sample_display_config(void)
-{
-    wchar_t iniPath[MAX_PATH];
-    wchar_t colorText[64];
-
-    get_ini_path(iniPath, sizeof(iniPath) / sizeof(iniPath[0]));
-
-    GetPrivateProfileStringW(
-        L"SAMPLEVIEW",
-        L"SAMPLECOLOR",
-        L"FFDD00",
-        colorText,
-        (DWORD)(sizeof(colorText) / sizeof(colorText[0])),
-        iniPath
-    );
-
-    g_colorWaveform = parse_ini_hex_color(colorText, DEFAULT_COLOR_WAVEFORM);
+    g_colorWaveform = app_ini_get_color(app, L"SAMPLEVIEW", L"SAMPLECOLOR", DEFAULT_COLOR_WAVEFORM);
     g_configLoaded = true;
 }
 
@@ -122,7 +59,7 @@ void sample_display_update(AppState *app, double dt)
     }
 
     if (!g_configLoaded) {
-        load_sample_display_config();
+        load_sample_display_config(app);
     }
 
     if (app->selectedSampleIndex > 0) {
@@ -160,7 +97,7 @@ void sample_display_draw(AppState *app, HDC hdc)
     }
 
     if (!g_configLoaded) {
-        load_sample_display_config();
+        load_sample_display_config(app);
     }
 
     sampleIndex = get_displayed_sample_index(app);
