@@ -28,6 +28,7 @@ static bool g_running = true;
 
 int main(int argc, char *argv[]) {
     setlocale(LC_ALL, "");
+    setlocale(LC_NUMERIC, "C");
     AppState app = {0};
     
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS)) {

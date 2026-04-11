@@ -85,19 +85,23 @@ DWORD GetModuleFileNameW(void* hModule, wchar_t* lpFilename, DWORD nSize) {
     const char *path = SDL_GetBasePath();
     if (!path) return 0;
     
-    size_t len = mbstowcs(lpFilename, path, nSize);
+    // Convert to wide string
+    wchar_t wPath[MAX_PATH*4];
+    size_t len = mbstowcs(wPath, path, MAX_PATH*4);
+    if (len == (size_t)-1) return 0;
+
+    // SDL_GetBasePath returns a directory with a trailing slash.
+    // Windows GetModuleFileName returns the full path TO the executable.
+    // We append a fake filename so that the app's 'find last slash' logic works.
+    wcsncpy(lpFilename, wPath, nSize - 1);
+    lpFilename[nSize - 1] = L'\0';
     
-    if (len == (size_t)-1) {
-        lpFilename[0] = L'\0';
-        return 0;
+    size_t currentLen = wcslen(lpFilename);
+    if (currentLen < nSize - 12) {
+        wcscat(lpFilename, L"hyperplayer");
     }
-    
-    if (len >= nSize) {
-        lpFilename[nSize - 1] = L'\0';
-        return nSize - 1;
-    }
-    
-    return (DWORD)len;
+
+    return (DWORD)wcslen(lpFilename);
 }
 
 bool CreateDirectoryW(const wchar_t* lpPathName, void* lpSecurityAttributes) {
@@ -147,15 +151,75 @@ DWORD GetFileAttributesW(const wchar_t* lpFileName) {
     return attr;
 }
 
+static char* trim_inplace(char* s) {
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+    if (*s == 0) return s;
+    char* end = s + strlen(s) - 1;
+    while (end > s && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) end--;
+    end[1] = '\0';
+    return s;
+}
+
 DWORD GetPrivateProfileStringW(const wchar_t* lpAppName, const wchar_t* lpKeyName, const wchar_t* lpDefault, wchar_t* lpReturnedString, DWORD nSize, const wchar_t* lpFileName) {
     if (!lpReturnedString || nSize == 0) return 0;
-    if (lpDefault) {
-        wcsncpy(lpReturnedString, lpDefault, nSize - 1);
-        lpReturnedString[nSize - 1] = L'\0';
-        return (DWORD)wcslen(lpReturnedString);
+
+    char section[256], key[256], fileName[MAX_PATH*4];
+    wcstombs(section, lpAppName, sizeof(section));
+    wcstombs(key, lpKeyName, sizeof(key));
+    wcstombs(fileName, lpFileName, sizeof(fileName));
+
+    FILE* f = fopen(fileName, "r");
+    if (!f) {
+        if (lpDefault) {
+            wcsncpy(lpReturnedString, lpDefault, nSize - 1);
+            lpReturnedString[nSize - 1] = L'\0';
+            return (DWORD)wcslen(lpReturnedString);
+        }
+        lpReturnedString[0] = L'\0';
+        return 0;
     }
-    lpReturnedString[0] = L'\0';
-    return 0;
+
+    char line[1024];
+    bool inSection = false;
+    bool found = false;
+
+    while (fgets(line, sizeof(line), f)) {
+        char* trimmed = trim_inplace(line);
+        if (trimmed[0] == ';' || trimmed[0] == '#') continue;
+        if (trimmed[0] == '[') {
+            char* end = strchr(trimmed, ']');
+            if (end) {
+                *end = '\0';
+                inSection = (strcasecmp(trimmed + 1, section) == 0);
+            }
+            continue;
+        }
+        if (inSection) {
+            char* sep = strchr(trimmed, '=');
+            if (sep) {
+                *sep = '\0';
+                if (strcasecmp(trim_inplace(trimmed), key) == 0) {
+                    char* val = trim_inplace(sep + 1);
+                    mbstowcs(lpReturnedString, val, nSize);
+                    lpReturnedString[nSize - 1] = L'\0';
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+    fclose(f);
+
+    if (!found) {
+        if (lpDefault) {
+            wcsncpy(lpReturnedString, lpDefault, nSize - 1);
+            lpReturnedString[nSize - 1] = L'\0';
+        } else {
+            lpReturnedString[0] = L'\0';
+        }
+    }
+
+    return (DWORD)wcslen(lpReturnedString);
 }
 
 DWORD GetTempPathW(DWORD nBufferLength, wchar_t* lpBuffer) {
@@ -474,6 +538,10 @@ void* GetStockObject(int fnObject) {
 }
 
 int GetPrivateProfileIntW(const wchar_t* lpAppName, const wchar_t* lpKeyName, int nDefault, const wchar_t* lpFileName) {
+    wchar_t buf[256];
+    if (GetPrivateProfileStringW(lpAppName, lpKeyName, NULL, buf, 256, lpFileName) > 0) {
+        return (int)wcstol(buf, NULL, 10);
+    }
     return nDefault;
 }
 

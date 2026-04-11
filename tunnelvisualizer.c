@@ -146,6 +146,9 @@ static void visualizer_build_ini_path(void)
     }
 
     slash = wcsrchr(g_visualizerIniPath, L'\\');
+    if (!slash) {
+        slash = wcsrchr(g_visualizerIniPath, L'/');
+    }
     if (slash) {
         slash[1] = L'\0';
         lstrcatW(g_visualizerIniPath, L"hyperplayer.ini");
