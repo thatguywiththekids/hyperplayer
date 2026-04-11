@@ -24,10 +24,10 @@ void sample_list_draw(AppState *app, HDC hdc)
     }
 
     for (int i = 1; i <= 31; ++i) {
-        wchar_t indexText[8];
-        wchar_t nameText[64];
-        wchar_t volText[16];
-        wchar_t sizeText[32];
+        wchar_t indexText[8] = {0};
+        wchar_t nameText[64] = {0};
+        wchar_t volText[16] = {0};
+        wchar_t sizeText[32] = {0};
         RECT nameRect;
         RECT volRect;
         RECT sizeRect;
@@ -35,7 +35,9 @@ void sample_list_draw(AppState *app, HDC hdc)
         int volume = 0;
         int size = 0;
 
-        player_get_sample_info(app, i, nameText, sizeof(nameText) / sizeof(nameText[0]), &volume, &size);
+        if (player_is_loaded(app)) {
+            player_get_sample_info(app, i, nameText, sizeof(nameText) / sizeof(nameText[0]), &volume, &size);
+        }
 
         swprintf(indexText, sizeof(indexText) / sizeof(indexText[0]), L"%02X", i);
         swprintf(volText, sizeof(volText) / sizeof(volText[0]), L"%02d", volume);
