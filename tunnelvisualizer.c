@@ -709,30 +709,6 @@ static bool bloom_ensure(int width, int height)
     return true;
 }
 
-static void buffer_add_color(unsigned int *buffer, int width, int height, int x, int y, COLORREF color, float amount)
-{
-    unsigned int p;
-    int r;
-    int g;
-    int b;
-
-    if (!buffer || x < 0 || y < 0 || x >= width || y >= height || amount <= 0.0f) {
-        return;
-    }
-
-    p = buffer[(size_t)y * (size_t)width + (size_t)x];
-
-    r = (int)((float)((p >> 16) & 255u) + ((float)GetRValue(color) * amount));
-    g = (int)((float)((p >> 8) & 255u) + ((float)GetGValue(color) * amount));
-    b = (int)((float)(p & 255u) + ((float)GetBValue(color) * amount));
-
-    if (r > 255) r = 255;
-    if (g > 255) g = 255;
-    if (b > 255) b = 255;
-
-    buffer[(size_t)y * (size_t)width + (size_t)x] = pack_bgra((unsigned int)r, (unsigned int)g, (unsigned int)b, 0u);
-}
-
 static void buffer_add_soft_ellipse(
     unsigned int *buffer,
     int width,
@@ -745,31 +721,50 @@ static void buffer_add_soft_ellipse(
     float strength
 )
 {
-    int minX;
-    int maxX;
-    int minY;
-    int maxY;
+    if (!buffer || rx <= 0.0f || ry <= 0.0f || strength <= 0.0f) return;
 
-    if (!buffer || rx <= 0.0f || ry <= 0.0f || strength <= 0.0f) {
-        return;
-    }
+    int minX = (int)floorf(cx - rx - 1.0f);
+    int maxX = (int)ceilf(cx + rx + 1.0f);
+    int minY = (int)floorf(cy - ry - 1.0f);
+    int maxY = (int)ceilf(cy + ry + 1.0f);
 
-    minX = (int)floorf(cx - rx - 1.0f);
-    maxX = (int)ceilf(cx + rx + 1.0f);
-    minY = (int)floorf(cy - ry - 1.0f);
-    maxY = (int)ceilf(cy + ry + 1.0f);
+    if (minX < 0) minX = 0;
+    if (maxX >= width) maxX = width - 1;
+    if (minY < 0) minY = 0;
+    if (maxY >= height) maxY = height - 1;
+
+    int r_base = (int)GetRValue(color);
+    int g_base = (int)GetGValue(color);
+    int b_base = (int)GetBValue(color);
+    float inv_rx2 = 1.0f / (rx * rx);
+    float inv_ry2 = 1.0f / (ry * ry);
 
     for (int y = minY; y <= maxY; ++y) {
+        float dy = (float)y + 0.5f - cy;
+        float dy2_inv_ry2 = dy * dy * inv_ry2;
+        unsigned int *row = &buffer[(size_t)y * width];
+        
         for (int x = minX; x <= maxX; ++x) {
-            float dx = ((float)x + 0.5f - cx) / rx;
-            float dy = ((float)y + 0.5f - cy) / ry;
-            float d2 = (dx * dx) + (dy * dy);
+            float dx = (float)x + 0.5f - cx;
+            float d2 = (dx * dx * inv_rx2) + dy2_inv_ry2;
 
             if (d2 < 1.0f) {
                 float d = sqrtf(d2);
                 float falloff = 1.0f - d;
                 float glow = falloff * falloff * strength;
-                buffer_add_color(buffer, width, height, x, y, color, glow);
+                int amount_fp = (int)(glow * 256.0f);
+                if (amount_fp <= 0) continue;
+
+                unsigned int p = row[x];
+                int b = (int)(p & 255u) + ((b_base * amount_fp) >> 8);
+                int g = (int)((p >> 8) & 255u) + ((g_base * amount_fp) >> 8);
+                int r = (int)((p >> 16) & 255u) + ((r_base * amount_fp) >> 8);
+
+                if (r > 255) r = 255;
+                if (g > 255) g = 255;
+                if (b > 255) b = 255;
+
+                row[x] = pack_bgra((unsigned int)r, (unsigned int)g, (unsigned int)b, 0u);
             }
         }
     }
