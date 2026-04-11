@@ -1135,51 +1135,100 @@ static void starfield_draw_square(HDC hdc, int x, int y, int size, COLORREF colo
 
 static void starfield_draw(HDC hdc)
 {
-    int i;
-
     if (!hdc || !g_starfield.ready) {
         return;
     }
 
-    for (i = 0; i < g_starfield.count; ++i) {
+    // Batch stars by brightness/color (0-255)
+    static SDL_FPoint *points[256] = {0};
+    static int pointCounts[256] = {0};
+    static int pointCaps[256] = {0};
+
+    static SDL_FRect *rects2[256] = {0};
+    static int rect2Counts[256] = {0};
+    static int rect2Caps[256] = {0};
+
+    static SDL_FRect *rects3[256] = {0};
+    static int rect3Counts[256] = {0};
+    static int rect3Caps[256] = {0};
+
+    for (int i = 0; i < 256; ++i) {
+        pointCounts[i] = 0;
+        rect2Counts[i] = 0;
+        rect3Counts[i] = 0;
+    }
+
+    for (int i = 0; i < g_starfield.count; ++i) {
         float sx = 0.0f;
         float sy = 0.0f;
-        float brightness;
-        int px;
-        int py;
-        int c;
-        int size;
-        COLORREF color;
-
         starfield_project(g_starfield.x[i], g_starfield.y[i], g_starfield.z[i], &sx, &sy);
 
         if (sx <= 0.0f || sx >= (float)g_starfield.width || sy <= 0.0f || sy >= (float)g_starfield.height) {
             continue;
         }
 
-        brightness = 1.0f - (g_starfield.z[i] / (float)g_starfield.width);
+        float brightness = 1.0f - (g_starfield.z[i] / (float)g_starfield.width);
         brightness = clampf_local(brightness, 0.0f, 1.0f);
         brightness *= g_starfield.brightness[i] * g_visualizer.starfieldBrightness;
         brightness = clampf_local(brightness, 0.0f, 1.0f);
 
-        c = (int)(brightness * 255.0f);
-        if (c < 12) {
-            continue;
-        }
+        int c = (int)(brightness * 255.0f);
+        if (c < 12) continue;
 
-        px = TV_BOX_X + (int)lroundf(sx);
-        py = TV_BOX_Y + (int)lroundf(sy);
+        float px = (float)TV_BOX_X + sx;
+        float py = (float)TV_BOX_Y + sy;
 
-        size = 1;
-        if (brightness > 0.40f) {
-            size = 2;
-        }
-        if (brightness > 0.78f) {
-            size = 3;
-        }
+        int size = 1;
+        if (brightness > 0.40f) size = 2;
+        if (brightness > 0.78f) size = 3;
 
-        color = color_scale_rgb(g_visualizer.starColor, (float)c / 255.0f);
-        starfield_draw_square(hdc, px, py, size, color);
+        if (size == 1) {
+            if (pointCounts[c] >= pointCaps[c]) {
+                pointCaps[c] = pointCaps[c] == 0 ? 64 : pointCaps[c] * 2;
+                points[c] = (SDL_FPoint*)realloc(points[c], pointCaps[c] * sizeof(SDL_FPoint));
+            }
+            points[c][pointCounts[c]].x = px;
+            points[c][pointCounts[c]].y = py;
+            pointCounts[c]++;
+        } else if (size == 2) {
+            if (rect2Counts[c] >= rect2Caps[c]) {
+                rect2Caps[c] = rect2Caps[c] == 0 ? 32 : rect2Caps[c] * 2;
+                rects2[c] = (SDL_FRect*)realloc(rects2[c], rect2Caps[c] * sizeof(SDL_FRect));
+            }
+            rects2[c][rect2Counts[c]].x = px;
+            rects2[c][rect2Counts[c]].y = py;
+            rects2[c][rect2Counts[c]].w = 2.0f;
+            rects2[c][rect2Counts[c]].h = 2.0f;
+            rect2Counts[c]++;
+        } else if (size == 3) {
+            if (rect3Counts[c] >= rect3Caps[c]) {
+                rect3Caps[c] = rect3Caps[c] == 0 ? 16 : rect3Caps[c] * 2;
+                rects3[c] = (SDL_FRect*)realloc(rects3[c], rect3Caps[c] * sizeof(SDL_FRect));
+            }
+            rects3[c][rect3Counts[c]].x = px;
+            rects3[c][rect3Counts[c]].y = py;
+            rects3[c][rect3Counts[c]].w = 3.0f;
+            rects3[c][rect3Counts[c]].h = 3.0f;
+            rect3Counts[c]++;
+        }
+    }
+
+    COLORREF starBase = g_visualizer.starColor;
+    for (int i = 0; i < 256; ++i) {
+        if (pointCounts[i] == 0 && rect2Counts[i] == 0 && rect3Counts[i] == 0) continue;
+
+        COLORREF color = color_scale_rgb(starBase, (float)i / 255.0f);
+        SDL_SetRenderDrawColor(hdc->renderer, GetRValue(color), GetGValue(color), GetBValue(color), 255);
+
+        if (pointCounts[i] > 0) {
+            SDL_RenderPoints(hdc->renderer, points[i], pointCounts[i]);
+        }
+        if (rect2Counts[i] > 0) {
+            SDL_RenderFillRects(hdc->renderer, rects2[i], rect2Counts[i]);
+        }
+        if (rect3Counts[i] > 0) {
+            SDL_RenderFillRects(hdc->renderer, rects3[i], rect3Counts[i]);
+        }
     }
 }
 
@@ -1649,9 +1698,10 @@ void tunnelvisualizer_draw(AppState *app, HDC hdc)
         innerRadius = 40;
     }
 
-    bloomReady = bloom_ensure(TV_BOX_W, TV_BOX_H);
+    bloomReady = bloom_ensure(TV_BOX_W / 2, TV_BOX_H / 2);
 
     if (bloomReady) {
+        float bloomScale = 0.5f;
         memset(g_bloom.src, 0, (size_t)g_bloom.width * (size_t)g_bloom.height * sizeof(unsigned int));
         memset(g_bloom.tmp, 0, (size_t)g_bloom.width * (size_t)g_bloom.height * sizeof(unsigned int));
         memset(g_bloom.pixels, 0, (size_t)g_bloom.width * (size_t)g_bloom.height * sizeof(unsigned int));
@@ -1670,11 +1720,11 @@ void tunnelvisualizer_draw(AppState *app, HDC hdc)
         auraColorA = hsv_to_rgb(hueBase + 0.02f, 0.65f, 1.00f);
         auraColorB = hsv_to_rgb(hueBase + 0.18f, 0.70f, 1.00f);
 
-        auraRx = (int)lroundf((double)innerRadius + 90.0);
-        auraRy = (int)lroundf(((double)innerRadius * 0.72) + 58.0);
+        auraRx = (int)lroundf(((double)innerRadius + 90.0) * (double)bloomScale);
+        auraRy = (int)lroundf((((double)innerRadius * 0.72) + 58.0) * (double)bloomScale);
 
-        buffer_add_soft_ellipse(g_bloom.src, g_bloom.width, g_bloom.height, (float)cx, (float)cy, (float)auraRx, (float)auraRy, auraColorA, auraStrength * 0.18f);
-        buffer_add_soft_ellipse(g_bloom.src, g_bloom.width, g_bloom.height, (float)cx, (float)cy, (float)(auraRx * 0.70f), (float)(auraRy * 0.70f), auraColorB, auraStrength * 0.24f);
+        buffer_add_soft_ellipse(g_bloom.src, g_bloom.width, g_bloom.height, (float)cx * bloomScale, (float)cy * bloomScale, (float)auraRx, (float)auraRy, auraColorA, auraStrength * 0.18f);
+        buffer_add_soft_ellipse(g_bloom.src, g_bloom.width, g_bloom.height, (float)cx * bloomScale, (float)cy * bloomScale, (float)(auraRx * 0.70f), (float)(auraRy * 0.70f), auraColorB, auraStrength * 0.24f);
 
         for (i = 0; i < BAND_COUNT; ++i) {
             float t = (float)i / (float)BAND_COUNT;
@@ -1685,10 +1735,10 @@ void tunnelvisualizer_draw(AppState *app, HDC hdc)
             float hiLenBoost = 1.0f + (hiCurve * g_visualizer.highHzLengthBonus);
             float barBase = (float)innerRadius;
             float len = 5.0f + ((((amp * 86.0f) + (g_radial.bass * 8.0f)) * 0.5f) * g_visualizer.barLengthScale * hiLenBoost);
-            float sx = (float)cx + (cosf(angle) * barBase);
-            float sy = (float)cy + (sinf(angle) * barBase);
-            float ex = (float)cx + (cosf(angle) * (barBase + len));
-            float ey = (float)cy + (sinf(angle) * (barBase + len));
+            float sx = ((float)cx + (cosf(angle) * barBase)) * bloomScale;
+            float sy = ((float)cy + (sinf(angle) * barBase)) * bloomScale;
+            float ex = ((float)cx + (cosf(angle) * (barBase + len))) * bloomScale;
+            float ey = ((float)cy + (sinf(angle) * (barBase + len))) * bloomScale;
             float hue = t + (float)(g_radial.rotation * (0.02f * g_visualizer.colorCycleSpeed));
             float bloomRadiusF;
             float bloomIntensity;
@@ -1700,7 +1750,7 @@ void tunnelvisualizer_draw(AppState *app, HDC hdc)
 
             color = hsv_to_rgb(hue, 0.78f, 1.00f);
 
-            bloomRadiusF = 2.8f + (amp * 4.8f) + (g_visualizer.globalGlowStrength * 2.5f);
+            bloomRadiusF = (2.8f + (amp * 4.8f) + (g_visualizer.globalGlowStrength * 2.5f)) * bloomScale;
             bloomIntensity = (0.10f + (amp * 0.22f) + (g_radial.beatFlash * 0.08f)) * g_visualizer.globalGlowStrength;
 
             buffer_add_soft_line(
@@ -1717,12 +1767,12 @@ void tunnelvisualizer_draw(AppState *app, HDC hdc)
             );
         }
 
-        bloomRadius = 4 + (int)lroundf(g_visualizer.globalGlowStrength * 4.0f);
-        if (bloomRadius < 2) {
-            bloomRadius = 2;
+        bloomRadius = (int)lroundf((4.0f + (g_visualizer.globalGlowStrength * 4.0f)) * bloomScale);
+        if (bloomRadius < 1) {
+            bloomRadius = 1;
         }
-        if (bloomRadius > 14) {
-            bloomRadius = 14;
+        if (bloomRadius > 8) {
+            bloomRadius = 8;
         }
 
         blur_horizontal(g_bloom.src, g_bloom.tmp, g_bloom.width, g_bloom.height, bloomRadius);
