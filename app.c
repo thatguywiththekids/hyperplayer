@@ -760,7 +760,7 @@ bool app_init(AppState *app)
     app_load_config(app);
 
     app_prepare_runtime_dlls(app);
-    assetsOk = ui_load_assets(app);
+    assetsOk = ui_load_assets(app, GetDC(NULL)->renderer);
     player_init(app);
     app_resolve_default_dir(app, defaultDir, sizeof(defaultDir) / sizeof(defaultDir[0]));
     dirOk = directory_listing_init(app, defaultDir);

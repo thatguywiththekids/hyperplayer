@@ -9,6 +9,40 @@
 #include <math.h>
 #include <locale.h>
 
+#define TEXT_CACHE_SIZE 128
+
+typedef struct TextCacheEntry {
+    char *mbs;
+    TTF_Font *font;
+    SDL_Color color;
+    SDL_Texture *texture;
+    int w, h;
+    uint64_t lastUsed;
+} TextCacheEntry;
+
+typedef struct {
+    TextCacheEntry entries[TEXT_CACHE_SIZE];
+    int count;
+} TextCache;
+
+static TextCache g_textCache = {0};
+
+static void prune_text_cache(void) {
+    if (g_textCache.count < TEXT_CACHE_SIZE) return;
+    int oldestIdx = 0;
+    uint64_t oldestTime = g_textCache.entries[0].lastUsed;
+    for (int i = 1; i < TEXT_CACHE_SIZE; ++i) {
+        if (g_textCache.entries[i].lastUsed < oldestTime) {
+            oldestTime = g_textCache.entries[i].lastUsed;
+            oldestIdx = i;
+        }
+    }
+    free(g_textCache.entries[oldestIdx].mbs);
+    SDL_DestroyTexture(g_textCache.entries[oldestIdx].texture);
+    memmove(&g_textCache.entries[oldestIdx], &g_textCache.entries[oldestIdx+1], (TEXT_CACHE_SIZE - oldestIdx - 1) * sizeof(TextCacheEntry));
+    g_textCache.count--;
+}
+
 // Tagged GDI Objects
 typedef enum { GDI_TYPE_FONT, GDI_TYPE_PEN, GDI_TYPE_BRUSH, GDI_TYPE_BITMAP } GdiType;
 typedef struct {
@@ -210,13 +244,45 @@ bool TextOutW(HDC hdc, int x, int y, const wchar_t* lpString, int c) {
     char mbs[4096];
     wcstombs(mbs, toRender, sizeof(mbs));
     mbs[4095] = '\0';
+
+    // Search cache
+    uint32_t now = SDL_GetTicks();
+    for (int i = 0; i < g_textCache.count; ++i) {
+        TextCacheEntry *e = &g_textCache.entries[i];
+        if (e->font == hdc->font && 
+            e->color.r == hdc->textColor.r && e->color.g == hdc->textColor.g && 
+            e->color.b == hdc->textColor.b && e->color.a == hdc->textColor.a &&
+            strcmp(e->mbs, mbs) == 0) {
+            
+            e->lastUsed = now;
+            SDL_FRect dst = { (float)x, (float)y, (float)e->w, (float)e->h };
+            SDL_RenderTexture(hdc->renderer, e->texture, NULL, &dst);
+            return true;
+        }
+    }
     
     SDL_Surface *surface = TTF_RenderText_Blended(hdc->font, mbs, 0, hdc->textColor);
     if (!surface) return false;
     SDL_Texture *texture = SDL_CreateTextureFromSurface(hdc->renderer, surface);
+    if (!texture) {
+        SDL_DestroySurface(surface);
+        return false;
+    }
+
     SDL_FRect dst = { (float)x, (float)y, (float)surface->w, (float)surface->h };
     SDL_RenderTexture(hdc->renderer, texture, NULL, &dst);
-    SDL_DestroyTexture(texture);
+
+    // Add to cache
+    prune_text_cache();
+    TextCacheEntry *ne = &g_textCache.entries[g_textCache.count++];
+    ne->mbs = strdup(mbs);
+    ne->font = hdc->font;
+    ne->color = hdc->textColor;
+    ne->texture = texture;
+    ne->w = surface->w;
+    ne->h = surface->h;
+    ne->lastUsed = now;
+
     SDL_DestroySurface(surface);
     return true;
 }

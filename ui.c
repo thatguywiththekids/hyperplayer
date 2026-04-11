@@ -54,7 +54,7 @@ static HFONT ui_make_font(const wchar_t *faceName, int pixelHeight, int weight)
     );
 }
 
-static bool ui_load_image_portable(const wchar_t *path, ImageRGBA *outImage)
+static bool ui_load_image_portable(void *renderer, const wchar_t *path, ImageRGBA *outImage)
 {
     char mbsPath[MAX_PATH*4];
     wcstombs(mbsPath, path, sizeof(mbsPath));
@@ -71,6 +71,7 @@ static bool ui_load_image_portable(const wchar_t *path, ImageRGBA *outImage)
     outImage->pixels = (unsigned char *)malloc(converted->w * converted->h * 4);
     if (outImage->pixels) {
         memcpy(outImage->pixels, converted->pixels, converted->w * converted->h * 4);
+        outImage->gpuTexture = SDL_CreateTextureFromSurface((SDL_Renderer *)renderer, converted);
     }
     
     SDL_DestroySurface(converted);
@@ -81,14 +82,24 @@ static void ui_free_image(ImageRGBA *image)
 {
     if (!image) return;
     if (image->pixels) free(image->pixels);
+    if (image->gpuTexture) SDL_DestroyTexture((SDL_Texture *)image->gpuTexture);
     image->pixels = NULL;
+    image->gpuTexture = NULL;
     image->width = 0;
     image->height = 0;
 }
 
 static void ui_draw_image(HDC hdc, const RECT *clientRect, const ImageRGBA *image)
 {
-    if (!hdc || !clientRect || !image || !image->pixels) return;
+    if (!hdc || !clientRect || !image) return;
+
+    if (image->gpuTexture) {
+        SDL_FRect dst = { (float)clientRect->left, (float)clientRect->top, (float)(clientRect->right - clientRect->left), (float)(clientRect->bottom - clientRect->top) };
+        SDL_RenderTexture(hdc->renderer, (SDL_Texture *)image->gpuTexture, NULL, &dst);
+        return;
+    }
+
+    if (!image->pixels) return;
     
     SDL_Surface *surface = SDL_CreateSurfaceFrom(image->width, image->height, SDL_PIXELFORMAT_BGRA32, image->pixels, image->width * 4);
     if (!surface) return;
@@ -167,7 +178,7 @@ static void ui_draw_fallback_shell(AppState *app, HDC hdc, const RECT *clientRec
     DeleteObject(bg);
 }
 
-bool ui_load_assets(AppState *app)
+bool ui_load_assets(AppState *app, void *renderer)
 {
     wchar_t cursorPath[MAX_PATH];
     app->fonts.pattern = ui_make_font(FONT_FACE, 18, FW_NORMAL);
@@ -179,7 +190,7 @@ bool ui_load_assets(AppState *app)
     app->fonts.waveform = ui_make_font(FONT_FACE, 32, FW_NORMAL);
     app->fonts.title = ui_make_font(FONT_FACE, 42, FW_BOLD);
     
-    ui_load_image_portable(app->backgroundPath, &app->background);
+    ui_load_image_portable(renderer, app->backgroundPath, &app->background);
     app->backgroundLoaded = (app->background.pixels != NULL);
 
     app_join_path(cursorPath, MAX_PATH, app->exeDir, L"PT-mousecursor.png");

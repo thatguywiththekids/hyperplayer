@@ -3,7 +3,7 @@
 
 #include "app.h"
 
-bool ui_load_assets(AppState *app);
+bool ui_load_assets(AppState *app, void *renderer);
 void ui_release_assets(AppState *app);
 void ui_draw(AppState *app, HDC hdc, const RECT *clientRect);
 

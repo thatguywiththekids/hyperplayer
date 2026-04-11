@@ -15,6 +15,7 @@ typedef struct ImageRGBA {
     UINT width;
     UINT height;
     unsigned char *pixels;
+    void *gpuTexture; // Cached SDL_Texture*
 } ImageRGBA;
 
 typedef struct FontSet {
