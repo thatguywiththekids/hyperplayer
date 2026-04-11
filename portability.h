@@ -182,6 +182,7 @@ typedef struct BITMAPINFO {
 // Functions to be implemented
 uint64_t GetTickCount64(void);
 void Sleep(uint32_t ms);
+void SetPortabilityTime(uint64_t now);
 DWORD GetModuleFileNameW(void* hModule, wchar_t* lpFilename, DWORD nSize);
 bool CreateDirectoryW(const wchar_t* lpPathName, void* lpSecurityAttributes);
 DWORD GetLastError(void);

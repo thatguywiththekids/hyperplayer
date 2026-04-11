@@ -12,7 +12,8 @@
 #define TEXT_CACHE_SIZE 128
 
 typedef struct TextCacheEntry {
-    char *mbs;
+    wchar_t *wcs;
+    int c;
     TTF_Font *font;
     SDL_Color color;
     SDL_Texture *texture;
@@ -26,6 +27,11 @@ typedef struct {
 } TextCache;
 
 static TextCache g_textCache = {0};
+static uint64_t g_currentTime = 0;
+
+void SetPortabilityTime(uint64_t now) {
+    g_currentTime = now;
+}
 
 static void prune_text_cache(void) {
     if (g_textCache.count < TEXT_CACHE_SIZE) return;
@@ -37,7 +43,7 @@ static void prune_text_cache(void) {
             oldestIdx = i;
         }
     }
-    free(g_textCache.entries[oldestIdx].mbs);
+    free(g_textCache.entries[oldestIdx].wcs);
     SDL_DestroyTexture(g_textCache.entries[oldestIdx].texture);
     memmove(&g_textCache.entries[oldestIdx], &g_textCache.entries[oldestIdx+1], (TEXT_CACHE_SIZE - oldestIdx - 1) * sizeof(TextCacheEntry));
     g_textCache.count--;
@@ -233,10 +239,28 @@ COLORREF SetTextColor(HDC hdc, COLORREF color) {
 bool TextOutW(HDC hdc, int x, int y, const wchar_t* lpString, int c) {
     if (!hdc || !hdc->font || !lpString) return false;
     
+    int len = c;
+    if (len < 0) len = (int)wcslen(lpString);
+
+    // Search cache with wide string directly
+    for (int i = 0; i < g_textCache.count; ++i) {
+        TextCacheEntry *e = &g_textCache.entries[i];
+        if (e->font == hdc->font && e->c == len &&
+            e->color.r == hdc->textColor.r && e->color.g == hdc->textColor.g && 
+            e->color.b == hdc->textColor.b && e->color.a == hdc->textColor.a &&
+            wcsncmp(e->wcs, lpString, (size_t)len) == 0) {
+            
+            e->lastUsed = g_currentTime ? g_currentTime : SDL_GetTicks();
+            SDL_FRect dst = { (float)x, (float)y, (float)e->w, (float)e->h };
+            SDL_RenderTexture(hdc->renderer, e->texture, NULL, &dst);
+            return true;
+        }
+    }
+
     wchar_t buf[4096];
     const wchar_t *toRender = lpString;
     if (c >= 0 && c < 4095) {
-        wcsncpy(buf, lpString, c);
+        wcsncpy(buf, lpString, (size_t)c);
         buf[c] = L'\0';
         toRender = buf;
     }
@@ -244,22 +268,6 @@ bool TextOutW(HDC hdc, int x, int y, const wchar_t* lpString, int c) {
     char mbs[4096];
     wcstombs(mbs, toRender, sizeof(mbs));
     mbs[4095] = '\0';
-
-    // Search cache
-    uint32_t now = SDL_GetTicks();
-    for (int i = 0; i < g_textCache.count; ++i) {
-        TextCacheEntry *e = &g_textCache.entries[i];
-        if (e->font == hdc->font && 
-            e->color.r == hdc->textColor.r && e->color.g == hdc->textColor.g && 
-            e->color.b == hdc->textColor.b && e->color.a == hdc->textColor.a &&
-            strcmp(e->mbs, mbs) == 0) {
-            
-            e->lastUsed = now;
-            SDL_FRect dst = { (float)x, (float)y, (float)e->w, (float)e->h };
-            SDL_RenderTexture(hdc->renderer, e->texture, NULL, &dst);
-            return true;
-        }
-    }
     
     SDL_Surface *surface = TTF_RenderText_Blended(hdc->font, mbs, 0, hdc->textColor);
     if (!surface) return false;
@@ -275,13 +283,16 @@ bool TextOutW(HDC hdc, int x, int y, const wchar_t* lpString, int c) {
     // Add to cache
     prune_text_cache();
     TextCacheEntry *ne = &g_textCache.entries[g_textCache.count++];
-    ne->mbs = strdup(mbs);
+    ne->wcs = (wchar_t*)malloc(((size_t)len + 1) * sizeof(wchar_t));
+    wcsncpy(ne->wcs, lpString, (size_t)len);
+    ne->wcs[len] = L'\0';
+    ne->c = len;
     ne->font = hdc->font;
     ne->color = hdc->textColor;
     ne->texture = texture;
     ne->w = surface->w;
     ne->h = surface->h;
-    ne->lastUsed = now;
+    ne->lastUsed = g_currentTime ? g_currentTime : SDL_GetTicks();
 
     SDL_DestroySurface(surface);
     return true;
