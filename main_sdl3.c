@@ -70,8 +70,11 @@ int main(int argc, char *argv[]) {
 
     SDL_Event event;
     uint64_t lastTime = SDL_GetTicksNS();
+    const int targetFps = 60;
+    const int frameDelay = 1000 / targetFps;
     
     while (g_running) {
+        uint32_t frameStart = SDL_GetTicks();
         uint64_t currentTime = SDL_GetTicksNS();
         double dt = (double)(currentTime - lastTime) / 1000000000.0;
         lastTime = currentTime;
@@ -168,6 +171,11 @@ int main(int argc, char *argv[]) {
         ui_draw(&app, &hdc_rec, &clientRect);
 
         SDL_RenderPresent(g_renderer);
+
+        uint32_t frameTime = SDL_GetTicks() - frameStart;
+        if (frameDelay > frameTime) {
+            SDL_Delay(frameDelay - frameTime);
+        }
     }
 
     app_shutdown(&app);
