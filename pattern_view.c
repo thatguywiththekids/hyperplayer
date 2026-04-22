@@ -1,10 +1,11 @@
 #include "pattern_view.h"
 #include "player.h"
-
+#include "renderer.h"
 #include "portability.h"
 #include <stdbool.h>
 #include <string.h>
 #include <wchar.h>
+#include <stdio.h>
 
 #define PATTERN_VISIBLE_ROWS 64
 
@@ -37,171 +38,30 @@ static const int g_lineXs[4] = { 73, 245, 417, 589 };
 static PatternCache g_cache = { 0 };
 static ScrollState g_scroll = { false, L"", true };
 
-static const wchar_t DEFAULT_TEXTCOLOR1[] = L"3648FF";
-static const wchar_t DEFAULT_TEXTCOLOR2[] = L"7196FF";
-static const COLORREF COLOR_WHITE = RGB(0xFF, 0xFF, 0xFF);
+static const HP_Color COLOR_WHITE = {255, 255, 255, 255};
 
 static void copy_wstr(wchar_t *dst, size_t dstCount, const wchar_t *src)
 {
-    if (!dst || dstCount == 0) {
-        return;
-    }
-
-    if (!src) {
-        dst[0] = L'\0';
-        return;
-    }
-
+    if (!dst || dstCount == 0) return;
+    if (!src) { dst[0] = L'\0'; return; }
     wcsncpy(dst, src, dstCount - 1);
     dst[dstCount - 1] = L'\0';
 }
 
-static int hex_nibble(wchar_t ch)
+static void load_pattern_colors(AppState *app, HP_Color *outTextColor1, HP_Color *outTextColor2)
 {
-    if (ch >= L'0' && ch <= L'9') {
-        return (int)(ch - L'0');
-    }
-    if (ch >= L'a' && ch <= L'f') {
-        return 10 + (int)(ch - L'a');
-    }
-    if (ch >= L'A' && ch <= L'F') {
-        return 10 + (int)(ch - L'A');
-    }
-    return -1;
-}
+    if (!outTextColor1 || !outTextColor2) return;
 
-static void trim_wstr_in_place(wchar_t *text)
-{
-    size_t len;
-    size_t start = 0;
-    size_t end;
-
-    if (!text) {
-        return;
-    }
-
-    len = wcslen(text);
-    while (start < len && (text[start] == L' ' || text[start] == L'\t' || text[start] == L'\r' || text[start] == L'\n')) {
-        start++;
-    }
-
-    end = len;
-    while (end > start && (text[end - 1] == L' ' || text[end - 1] == L'\t' || text[end - 1] == L'\r' || text[end - 1] == L'\n')) {
-        end--;
-    }
-
-    if (start > 0) {
-        memmove(text, text + start, (end - start) * sizeof(wchar_t));
-    }
-
-    text[end - start] = L'\0';
-}
-
-static COLORREF color_from_web_hex(const wchar_t *hexText, COLORREF fallback)
-{
-    int r1, r2, g1, g2, b1, b2;
-    int r, g, b;
-    wchar_t cleaned[16];
-
-    if (!hexText) {
-        return fallback;
-    }
-
-    copy_wstr(cleaned, sizeof(cleaned) / sizeof(cleaned[0]), hexText);
-    trim_wstr_in_place(cleaned);
-
-    if (wcslen(cleaned) != 6) {
-        return fallback;
-    }
-
-    r1 = hex_nibble(cleaned[0]);
-    r2 = hex_nibble(cleaned[1]);
-    g1 = hex_nibble(cleaned[2]);
-    g2 = hex_nibble(cleaned[3]);
-    b1 = hex_nibble(cleaned[4]);
-    b2 = hex_nibble(cleaned[5]);
-
-    if (r1 < 0 || r2 < 0 || g1 < 0 || g2 < 0 || b1 < 0 || b2 < 0) {
-        return fallback;
-    }
-
-    r = (r1 << 4) | r2;
-    g = (g1 << 4) | g2;
-    b = (b1 << 4) | b2;
-
-    return RGB(r, g, b);
-}
-
-static void get_ini_path(wchar_t *outPath, size_t outPathCount)
-{
-    wchar_t modulePath[MAX_PATH];
-    wchar_t *lastSlash;
-
-    if (!outPath || outPathCount == 0) {
-        return;
-    }
-
-    outPath[0] = L'\0';
-
-    if (GetModuleFileNameW(NULL, modulePath, (DWORD)(sizeof(modulePath) / sizeof(modulePath[0]))) == 0) {
-        copy_wstr(outPath, outPathCount, L"hyperplayer.ini");
-        return;
-    }
-
-    lastSlash = wcsrchr(modulePath, L'\\');
-    if (!lastSlash) {
-        copy_wstr(outPath, outPathCount, L"hyperplayer.ini");
-        return;
-    }
-
-    *(lastSlash + 1) = L'\0';
-    copy_wstr(outPath, outPathCount, modulePath);
-
-    if (wcslen(outPath) + wcslen(L"hyperplayer.ini") < outPathCount) {
-        wcscat(outPath, L"hyperplayer.ini");
-    }
-}
-
-static void load_pattern_colors(COLORREF *outTextColor1, COLORREF *outTextColor2)
-{
-    wchar_t iniPath[MAX_PATH];
-    wchar_t textColor1[64];
-    wchar_t textColor2[64];
-
-    if (!outTextColor1 || !outTextColor2) {
-        return;
-    }
-
-    get_ini_path(iniPath, sizeof(iniPath) / sizeof(iniPath[0]));
-
-    GetPrivateProfileStringW(
-        L"PATTERN",
-        L"TEXTCOLOR1",
-        DEFAULT_TEXTCOLOR1,
-        textColor1,
-        (DWORD)(sizeof(textColor1) / sizeof(textColor1[0])),
-        iniPath
-    );
-
-    GetPrivateProfileStringW(
-        L"PATTERN",
-        L"TEXTCOLOR2",
-        DEFAULT_TEXTCOLOR2,
-        textColor2,
-        (DWORD)(sizeof(textColor2) / sizeof(textColor2[0])),
-        iniPath
-    );
-
-    *outTextColor1 = color_from_web_hex(textColor1, RGB(0x36, 0x48, 0xFF));
-    *outTextColor2 = color_from_web_hex(textColor2, RGB(0x71, 0x96, 0xFF));
+    *outTextColor1 = app_ini_get_color(app, L"PATTERN", L"TEXTCOLOR1", (HP_Color){54, 72, 255, 255});
+    *outTextColor2 = app_ini_get_color(app, L"PATTERN", L"TEXTCOLOR2", (HP_Color){113, 150, 255, 255});
 }
 
 static void build_empty_rows(void)
 {
     for (int i = 0; i < PATTERN_VISIBLE_ROWS; ++i) {
-        swprintf(g_cache.rows[i].rowText, sizeof(g_cache.rows[i].rowText) / sizeof(g_cache.rows[i].rowText[0]), L"%02d", i);
+        swprintf(g_cache.rows[i].rowText, 8, L"%02d", i);
         for (int ch = 0; ch < 4; ++ch) {
-            copy_wstr(g_cache.rows[i].cells[ch], sizeof(g_cache.rows[i].cells[ch]) / sizeof(g_cache.rows[i].cells[ch][0]), L"--- 00000");
+            copy_wstr(g_cache.rows[i].cells[ch], 16, L"--- 00000");
         }
     }
 }
@@ -227,133 +87,73 @@ static void reset_cache_to_empty(void)
 
 static void update_scroll_lock(const AppState *app)
 {
-    const wchar_t *currentFile;
-    bool isStopped;
-
-    currentFile = player_get_current_file_path(app);
-    isStopped = player_is_stopped(app);
+    const wchar_t *currentFile = player_get_current_file_path(app);
+    bool isStopped = player_is_stopped(app);
 
     if (wcscmp(g_scroll.lastFile, currentFile) != 0) {
         g_scroll.locked = false;
-        copy_wstr(g_scroll.lastFile, sizeof(g_scroll.lastFile) / sizeof(g_scroll.lastFile[0]), currentFile);
+        copy_wstr(g_scroll.lastFile, MAX_PATH, currentFile);
     }
 
-    if (isStopped && !g_scroll.lastStopped) {
-        g_scroll.locked = false;
-    }
-
-    if (!isStopped && player_get_current_row(app) >= 32) {
-        g_scroll.locked = true;
-    }
+    if (isStopped && !g_scroll.lastStopped) g_scroll.locked = false;
+    if (!isStopped && player_get_current_row(app) >= 32) g_scroll.locked = true;
 
     g_scroll.lastStopped = isStopped;
 }
 
 static int get_highlight_row(const AppState *app)
 {
-    int row;
-
     update_scroll_lock(app);
-
-    row = player_get_current_row(app);
-
-    if (player_is_stopped(app)) {
-        if (row + 1 < 33) {
-            return row + 1;
-        }
-        return 33;
-    }
-
-    if (g_scroll.locked) {
-        return 33;
-    }
-
-    if (row + 1 < 33) {
-        return row + 1;
-    }
-    return 33;
+    int row = player_get_current_row(app);
+    if (player_is_stopped(app)) return (row + 1 < 33) ? row + 1 : 33;
+    if (g_scroll.locked) return 33;
+    return (row + 1 < 33) ? row + 1 : 33;
 }
 
 static bool resolve_song_position(const AppState *app, int rowOffset, int *outOrder, int *outPattern, int *outRow)
 {
-    int songLength;
-    int order;
-    int row;
+    if (!app || !outOrder || !outPattern || !outRow || !player_is_loaded(app)) return false;
 
-    if (!app || !outOrder || !outPattern || !outRow || !player_is_loaded(app)) {
-        return false;
-    }
+    int songLength = player_get_num_orders(app);
+    if (songLength <= 0) return false;
 
-    songLength = player_get_num_orders(app);
-    if (songLength <= 0) {
-        return false;
-    }
-
-    order = player_get_current_order(app);
-    row = player_get_current_row(app);
+    int order = player_get_current_order(app);
+    int row = player_get_current_row(app);
 
     while (rowOffset > 0) {
         int pattern = player_get_order_pattern(app, order);
-        int rowCount;
-
-        if (pattern < 0) {
-            return false;
-        }
-
-        rowCount = player_get_pattern_num_rows(app, pattern);
+        if (pattern < 0) return false;
+        int rowCount = player_get_pattern_num_rows(app, pattern);
         row++;
-
         if (row >= rowCount) {
             order++;
-
             if (order >= songLength) {
-                if (player_get_loop_enabled(app)) {
-                    order = 0;
-                } else {
-                    return false;
-                }
+                if (player_get_loop_enabled(app)) order = 0;
+                else return false;
             }
-
             row = 0;
         }
-
         rowOffset--;
     }
 
     while (rowOffset < 0) {
         row--;
-
         if (row < 0) {
-            int pattern;
-            int rowCount;
-
             order--;
-
             if (order < 0) {
-                if (player_get_loop_enabled(app)) {
-                    order = songLength - 1;
-                } else {
-                    return false;
-                }
+                if (player_get_loop_enabled(app)) order = songLength - 1;
+                else return false;
             }
-
-            pattern = player_get_order_pattern(app, order);
-            if (pattern < 0) {
-                return false;
-            }
-
-            rowCount = player_get_pattern_num_rows(app, pattern);
+            int pattern = player_get_order_pattern(app, order);
+            if (pattern < 0) return false;
+            int rowCount = player_get_pattern_num_rows(app, pattern);
             row = (rowCount > 0) ? (rowCount - 1) : 0;
         }
-
         rowOffset++;
     }
 
     *outPattern = player_get_order_pattern(app, order);
-    if (*outPattern < 0) {
-        return false;
-    }
-
+    if (*outPattern < 0) return false;
     *outOrder = order;
     *outRow = row;
     return true;
@@ -361,39 +161,24 @@ static bool resolve_song_position(const AppState *app, int rowOffset, int *outOr
 
 static void rebuild_cache(const AppState *app)
 {
-    int highlightRow;
-
     build_empty_rows();
-
-    highlightRow = get_highlight_row(app);
+    int highlightRow = get_highlight_row(app);
     g_cache.highlightRow = highlightRow;
 
     for (int visibleRow = 1; visibleRow <= PATTERN_VISIBLE_ROWS; ++visibleRow) {
         int rowOffset = visibleRow - highlightRow;
-        int order;
-        int pattern;
-        int row;
+        int order, pattern, row;
 
         if (resolve_song_position(app, rowOffset, &order, &pattern, &row)) {
-            swprintf(g_cache.rows[visibleRow - 1].rowText,
-                     sizeof(g_cache.rows[visibleRow - 1].rowText) / sizeof(g_cache.rows[visibleRow - 1].rowText[0]),
-                     L"%02d",
-                     row);
-
+            swprintf(g_cache.rows[visibleRow - 1].rowText, 8, L"%02d", row);
             for (int channel = 0; channel < 4; ++channel) {
-                player_format_pattern_cell(
-                    app,
-                    pattern,
-                    row,
-                    channel,
-                    g_cache.rows[visibleRow - 1].cells[channel],
-                    sizeof(g_cache.rows[visibleRow - 1].cells[channel]) / sizeof(g_cache.rows[visibleRow - 1].cells[channel][0])
-                );
+                player_format_pattern_cell(app, pattern, row, channel, 
+                    g_cache.rows[visibleRow - 1].cells[channel], 16);
             }
         }
     }
 
-    copy_wstr(g_cache.keyFile, sizeof(g_cache.keyFile) / sizeof(g_cache.keyFile[0]), player_get_current_file_path(app));
+    copy_wstr(g_cache.keyFile, MAX_PATH, player_get_current_file_path(app));
     g_cache.keyOrder = player_get_current_order(app);
     g_cache.keyPattern = player_get_current_pattern(app);
     g_cache.keyRow = player_get_current_row(app);
@@ -405,26 +190,17 @@ static void rebuild_cache(const AppState *app)
 
 static void ensure_cache(const AppState *app)
 {
-    const wchar_t *currentFile;
-    bool isStopped;
-    bool loopEnabled;
-    int order;
-    int pattern;
-    int row;
-
     if (!player_is_loaded(app)) {
-        if (!g_cache.valid) {
-            reset_cache_to_empty();
-        }
+        if (!g_cache.valid) reset_cache_to_empty();
         return;
     }
 
-    currentFile = player_get_current_file_path(app);
-    isStopped = player_is_stopped(app);
-    loopEnabled = player_get_loop_enabled(app);
-    order = player_get_current_order(app);
-    pattern = player_get_current_pattern(app);
-    row = player_get_current_row(app);
+    const wchar_t *currentFile = player_get_current_file_path(app);
+    bool isStopped = player_is_stopped(app);
+    bool loopEnabled = player_get_loop_enabled(app);
+    int order = player_get_current_order(app);
+    int pattern = player_get_current_pattern(app);
+    int row = player_get_current_row(app);
 
     update_scroll_lock(app);
 
@@ -440,55 +216,31 @@ static void ensure_cache(const AppState *app)
     }
 }
 
-void pattern_view_draw(AppState *app, HDC hdc)
+void pattern_view_draw(AppState *app, HP_DrawContext *ctx)
 {
-    HFONT oldFont;
-    int savedDc;
-    bool canHighlight;
-    COLORREF textColor1;
-    COLORREF textColor2;
-
-    if (!app || !hdc || !app->fonts.pattern) {
-        return;
-    }
+    if (!app || !ctx || !app->fonts.pattern) return;
 
     ensure_cache(app);
-    load_pattern_colors(&textColor1, &textColor2);
+    HP_Color textColor1, textColor2;
+    load_pattern_colors(app, &textColor1, &textColor2);
 
-    savedDc = SaveDC(hdc);
-    oldFont = (HFONT)SelectObject(hdc, app->fonts.pattern);
-    SetBkMode(hdc, TRANSPARENT);
-
-    canHighlight = player_is_loaded(app) && !player_is_stopped(app);
+    hp_draw_set_font(ctx, app->fonts.pattern);
+    bool canHighlight = player_is_loaded(app) && !player_is_stopped(app);
 
     for (int visibleRow = 1; visibleRow <= PATTERN_VISIBLE_ROWS; ++visibleRow) {
         int rowY = (int)(1.0 + ((visibleRow - 1) * 16.75) + 0.5);
         bool highlight = canHighlight && (visibleRow == g_cache.highlightRow);
         const PatternRow *rowData = &g_cache.rows[visibleRow - 1];
-        COLORREF color = textColor1;
+        HP_Color color = textColor1;
 
-        if (wcscmp(rowData->rowText, L"00") == 0) {
-            color = textColor2;
-        }
+        if (wcscmp(rowData->rowText, L"00") == 0) color = textColor2;
+        if (highlight) color = COLOR_WHITE;
 
-        if (highlight) {
-            color = COLOR_WHITE;
-        }
-
-        SetTextColor(hdc, color);
-        TextOutW(hdc, 16, rowY, rowData->rowText, (int)wcslen(rowData->rowText));
+        hp_draw_set_text_color(ctx, color);
+        hp_draw_text(ctx, 16, rowY, rowData->rowText);
 
         for (int channel = 0; channel < 4; ++channel) {
-            TextOutW(
-                hdc,
-                g_lineXs[channel],
-                rowY,
-                rowData->cells[channel],
-                (int)wcslen(rowData->cells[channel])
-            );
+            hp_draw_text(ctx, g_lineXs[channel], rowY, rowData->cells[channel]);
         }
     }
-
-    SelectObject(hdc, oldFont);
-    RestoreDC(hdc, savedDc);
 }

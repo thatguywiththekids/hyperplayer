@@ -1,7 +1,7 @@
 #include "app.h"
 #include "ui.h"
 #include "player.h"
-#include "directory_listing_posix.h"
+#include "directory_listing.h"
 #include "action_buttons.h"
 #include "sample_list.h"
 #include "sample_list_usage_trigger.h"
@@ -12,6 +12,7 @@
 #include "tunnelvisualizer.h"
 #include "mousecursor.h"
 #include "urls.h"
+#include "renderer.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -55,9 +56,6 @@ int main(int argc, char *argv[]) {
 
     SDL_SetRenderLogicalPresentation(g_renderer, 1920, 1080, SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
-    HDC screenHdc = GetDC(NULL);
-    screenHdc->renderer = g_renderer;
-
     // App Initialization
     if (!app_init(&app)) {
         fprintf(stderr, "app_init failed\n");
@@ -66,8 +64,11 @@ int main(int argc, char *argv[]) {
 
     app.hwnd = (HWND)g_window;
 
-    struct HDC_REC hdc_rec = {0};
-    hdc_rec.renderer = g_renderer;
+    HP_DrawContext ctx;
+    hp_renderer_init_context(&ctx, g_renderer);
+
+    // Assets need to be loaded after renderer is ready
+    ui_load_assets(&app, g_renderer);
 
     SDL_Event event;
     uint64_t lastTime = SDL_GetTicksNS();
@@ -76,7 +77,6 @@ int main(int argc, char *argv[]) {
     
     while (g_running) {
         uint64_t frameStart = SDL_GetTicks();
-        SetPortabilityTime(frameStart);
         uint64_t currentTime = SDL_GetTicksNS();
         double dt = (double)(currentTime - lastTime) / 1000000000.0;
         lastTime = currentTime;
@@ -169,8 +169,8 @@ int main(int argc, char *argv[]) {
         SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
         SDL_RenderClear(g_renderer);
 
-        RECT clientRect = { 0, 0, 1920, 1080 };
-        ui_draw(&app, &hdc_rec, &clientRect);
+        HP_Rect clientRect = { 0, 0, 1920, 1080 };
+        ui_draw(&app, &ctx, &clientRect);
 
         SDL_RenderPresent(g_renderer);
 

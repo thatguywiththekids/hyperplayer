@@ -16,7 +16,7 @@
 #define PLAYER_BUFFER_FRAMES 1024
 #define AUDIO_HISTORY_SIZE 131072
 
-static const COLORREF COLOR_INFO = RGB(0xBB, 0xBB, 0xBB);
+static const HP_Color COLOR_INFO = {0xBB, 0xBB, 0xBB, 255};
 
 #define SAMPLE_PREVIEW_WIDTH 555
 
@@ -64,11 +64,25 @@ static unsigned short u16be(const unsigned char *bytes, size_t index, size_t siz
 
 static bool has_known_31_sample_signature(const unsigned char *bytes, size_t size) {
     if (!bytes || size < 1084) return false;
-    if (memcmp(bytes + 1080, "M.K.", 4) == 0) return true;
-    if (memcmp(bytes + 1080, "M!K!", 4) == 0) return true;
-    if (memcmp(bytes + 1080, "FLT4", 4) == 0) return true;
-    if (memcmp(bytes + 1080, "4CHN", 4) == 0) return true;
-    if (memcmp(bytes + 1080, "N.T.", 4) == 0) return true;
+    const unsigned char *sig = bytes + 1080;
+
+    // Classic signatures
+    if (memcmp(sig, "M.K.", 4) == 0 || memcmp(sig, "M!K!", 4) == 0 || memcmp(sig, "N.T.", 4) == 0) return true;
+    
+    // Multi-channel (4CHN, 6CHN, 8CHN, etc.)
+    if (isdigit(sig[0]) && memcmp(sig + 1, "CHN", 3) == 0) return true;
+    if (isdigit(sig[0]) && isdigit(sig[1]) && memcmp(sig + 2, "CH", 2) == 0) return true;
+    
+    // StarTrekker
+    if (memcmp(sig, "FLT", 3) == 0 && isdigit(sig[3])) return true;
+    if (memcmp(sig, "EXO", 3) == 0 && isdigit(sig[3])) return true;
+    
+    // OctALyzer / OKTALYSER
+    if (memcmp(sig, "CD81", 4) == 0 || memcmp(sig, "OKTA", 4) == 0) return true;
+    
+    // TakeTracker
+    if (isdigit(sig[0]) && sig[1] == 'T' && sig[2] == 'D' && sig[3] == 'Z') return true;
+
     return false;
 }
 
@@ -165,7 +179,7 @@ static void update_channel_state_from_row(PlayerState *p) {
         const char *sInstr = openmpt_module_format_pattern_row_channel_command(p->mod, pattern, row, channel, 1);
         
         int sampleIndex = 0;
-        if (sInstr && sInstr[0] != '.' && sInstr[0] != ' ') {
+        if (sInstr && sInstr[0] != '.' && strcmp(sInstr, "00") != 0) {
             sampleIndex = (int)strtol(sInstr, NULL, 16);
         }
 
@@ -368,7 +382,9 @@ static void clear_sample_cache(PlayerState *p) {
 static void parse_mod_samples(PlayerState *p, const unsigned char *data, size_t size) {
     if (!p || !data || size < 600) return;
     int sampleCount = has_known_31_sample_signature(data, size) ? 31 : 15;
-    int channels = 4;
+    int channels = openmpt_module_get_num_channels(p->mod);
+    if (channels < 1) channels = 4; // Fallback
+    
     size_t ordersOffset = (sampleCount == 31) ? 952 : 472;
     size_t patternsOffset = (sampleCount == 31) ? 1084 : 600;
     int highestPattern = 0;
@@ -467,13 +483,41 @@ bool player_get_sample_preview(const AppState *app, int sampleIndex1Based, const
     return false;
 }
 
+static bool is_sample_non_empty(const SampleCache *sc) {
+    if (!sc) return false;
+    // Only consider it "non-empty" for the display cycle if it has actual waveform data
+    return (sc->previewCount > 0);
+}
+
 int player_get_nonempty_sample_count(const AppState *app) {
     if (!app->player || !app->player->mod) return 0;
-    return openmpt_module_get_num_samples(app->player->mod);
+    PlayerState *p = app->player;
+    ensure_sample_cache(p);
+    
+    int count = 0;
+    for (int i = 0; i < p->sampleCacheCount; ++i) {
+        if (is_sample_non_empty(&p->sampleCache[i])) {
+            count++;
+        }
+    }
+    return count;
 }
 
 int player_get_nonempty_sample_index(const AppState *app, int slotIndex) {
-    return slotIndex + 1;
+    if (!app->player || !app->player->mod) return 0;
+    PlayerState *p = app->player;
+    ensure_sample_cache(p);
+
+    int currentSlot = 0;
+    for (int i = 0; i < p->sampleCacheCount; ++i) {
+        if (is_sample_non_empty(&p->sampleCache[i])) {
+            if (currentSlot == slotIndex) {
+                return i + 1; // 1-based index
+            }
+            currentSlot++;
+        }
+    }
+    return 0;
 }
 
 bool player_load_module(AppState *app, const wchar_t *absolutePath, const wchar_t *displayName) {
@@ -526,8 +570,10 @@ bool player_load_module(AppState *app, const wchar_t *absolutePath, const wchar_
     // Clear cache from previous module
     clear_sample_cache(p);
     
-    // Parse MOD metadata manually for restoration
-    parse_mod_samples(p, (const unsigned char *)data, size);
+    // Parse MOD metadata manually for restoration (only for classic MODs)
+    if (strcmp(p->modType, "mod") == 0) {
+        parse_mod_samples(p, (const unsigned char *)data, size);
+    }
     
     free(data);
     
@@ -561,7 +607,7 @@ bool player_load_module(AppState *app, const wchar_t *absolutePath, const wchar_
     return true;
 }
 
-void player_draw_songinfo(AppState *app, HDC hdc) {
+void player_draw_songinfo(AppState *app, HP_DrawContext *ctx) {
     PlayerState *p;
     wchar_t posText[32];
     wchar_t posSuffix[32];
@@ -569,10 +615,10 @@ void player_draw_songinfo(AppState *app, HDC hdc) {
     wchar_t lengthText[32];
     wchar_t bpmText[32];
     wchar_t speedText[32];
-    SIZE currentPosSize;
+    int currentPosW, currentPosH;
     const wchar_t *title;
 
-    if (!app || !app->player || !hdc) {
+    if (!app || !app->player || !ctx) {
         return;
     }
 
@@ -586,29 +632,32 @@ void player_draw_songinfo(AppState *app, HDC hdc) {
     int order = openmpt_module_get_current_order(p->mod);
     int numOrders = openmpt_module_get_num_orders(p->mod);
     int pattern = openmpt_module_get_current_pattern(p->mod);
-    int row = openmpt_module_get_current_row(p->mod);
+    int bpm = (int)(openmpt_module_get_current_tempo2(p->mod) + 0.5);
+    int speed = openmpt_module_get_current_speed(p->mod);
 
     swprintf(posText, 32, L"%02d", order);
     swprintf(posSuffix, 32, L"/%02d", numOrders);
     swprintf(patternText, 32, L"%02d", pattern);
     swprintf(lengthText, 32, L"%02d", numOrders);
-    // Note: original had bpm/speed but those need more calls or fields. 
-    // Let's at least get the ones we have working first.
-    swprintf(bpmText, 32, L"125"); // Stub for now if not easily available
-    swprintf(speedText, 32, L"6");  // Stub for now if not easily available
+    swprintf(bpmText, 32, L"%03d", bpm);
+    swprintf(speedText, 32, L"%02d", speed);
 
-    ui_draw_shadowed_text(hdc, app->fonts.info, title, 929, 3, RGB(0xFF, 0xFF, 0xFF), RGB(0x59, 0x59, 0x59), 3, 3, NULL, 0);
+    HP_Color white = {255, 255, 255, 255};
+    HP_Color shadow = {89, 89, 89, 255};
+    HP_Color info = {187, 187, 187, 255};
 
-    SelectObject(hdc, app->fonts.info2);
-    GetTextExtentPoint32W(hdc, posText, (int)wcslen(posText), &currentPosSize);
+    ui_draw_shadowed_text(ctx, app->fonts.info, title, 929, 3, white, shadow, 3, 3, NULL, 0);
 
-    ui_draw_shadowed_text(hdc, app->fonts.info2, posText, 931, 44, RGB(0xFF, 0xFF, 0xFF), RGB(0x59, 0x59, 0x59), 3, 3, NULL, 0);
-    ui_draw_shadowed_text(hdc, app->fonts.info2, posSuffix, 931 + currentPosSize.cx, 44, COLOR_INFO, RGB(0x59, 0x59, 0x59), 3, 3, NULL, 0);
+    hp_draw_set_font(ctx, app->fonts.info2);
+    hp_get_text_size(ctx, posText, &currentPosW, &currentPosH);
 
-    ui_draw_shadowed_text(hdc, app->fonts.info2, patternText, 931, 74, RGB(0xFF, 0xFF, 0xFF), RGB(0x59, 0x59, 0x59), 3, 3, NULL, 0);
-    ui_draw_shadowed_text(hdc, app->fonts.info2, lengthText, 931, 104, RGB(0xFF, 0xFF, 0xFF), RGB(0x59, 0x59, 0x59), 3, 3, NULL, 0);
-    ui_draw_shadowed_text(hdc, app->fonts.info2, bpmText, 931, 134, RGB(0xFF, 0xFF, 0xFF), RGB(0x59, 0x59, 0x59), 3, 3, NULL, 0);
-    ui_draw_shadowed_text(hdc, app->fonts.info2, speedText, 931, 164, RGB(0xFF, 0xFF, 0xFF), RGB(0x59, 0x59, 0x59), 3, 3, NULL, 0);
+    ui_draw_shadowed_text(ctx, app->fonts.info2, posText, 931, 44, white, shadow, 3, 3, NULL, 0);
+    ui_draw_shadowed_text(ctx, app->fonts.info2, posSuffix, 931 + currentPosW, 44, info, shadow, 3, 3, NULL, 0);
+
+    ui_draw_shadowed_text(ctx, app->fonts.info2, patternText, 931, 74, white, shadow, 3, 3, NULL, 0);
+    ui_draw_shadowed_text(ctx, app->fonts.info2, lengthText, 931, 104, white, shadow, 3, 3, NULL, 0);
+    ui_draw_shadowed_text(ctx, app->fonts.info2, bpmText, 931, 134, white, shadow, 3, 3, NULL, 0);
+    ui_draw_shadowed_text(ctx, app->fonts.info2, speedText, 931, 164, white, shadow, 3, 3, NULL, 0);
 }
 
 void player_play(AppState *app) {

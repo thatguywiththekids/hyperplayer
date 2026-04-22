@@ -2,6 +2,7 @@
 #define PLAYER_H
 
 #include "app.h"
+#include "renderer.h"
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -56,7 +57,7 @@ bool player_get_sample_values(const AppState *app, int sampleIndex1Based, const 
 
 bool player_load_module(AppState *app, const wchar_t *absolutePath, const wchar_t *displayName);
 
-void player_draw_songinfo(AppState *app, HDC hdc);
+void player_draw_songinfo(AppState *app, HP_DrawContext *ctx);
 
 void player_play(AppState *app);
 void player_pause(AppState *app);

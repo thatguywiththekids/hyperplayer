@@ -2,7 +2,8 @@
 #define QUADRASCOPE_H
 
 #include "app.h"
+#include "renderer.h"
 
-void quadrascope_draw(AppState *app, HDC hdc);
+void quadrascope_draw(AppState *app, HP_DrawContext *ctx);
 
 #endif

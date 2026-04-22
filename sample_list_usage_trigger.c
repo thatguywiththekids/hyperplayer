@@ -1,6 +1,6 @@
 #include "sample_list_usage_trigger.h"
 #include "player.h"
-
+#include "renderer.h"
 #include "portability.h"
 #include <stdbool.h>
 #include <string.h>
@@ -17,7 +17,7 @@ typedef struct HighlightBox {
 typedef struct SampleListConfig {
     float bgTransparency;
     float bgFade;
-    ULONGLONG lastLoadTick;
+    uint64_t lastLoadTick;
     bool loaded;
 } SampleListConfig;
 
@@ -37,37 +37,16 @@ static SampleListConfig g_config = { 0 };
 
 static void reset_highlights(AppState *app)
 {
-    if (!app) {
-        return;
-    }
-
+    if (!app) return;
     for (int i = 0; i < 31; ++i) {
         app->sampleHighlightAlpha[i] = 0.0f;
     }
 }
 
-static void copy_wstr_local(wchar_t *dst, size_t dstCount, const wchar_t *src)
-{
-    if (!dst || dstCount == 0) {
-        return;
-    }
-
-    if (!src) {
-        dst[0] = L'\0';
-        return;
-    }
-
-    wcsncpy(dst, src, dstCount - 1);
-    dst[dstCount - 1] = L'\0';
-}
-
 static void sample_list_usage_trigger_load_config(AppState *app)
 {
-    ULONGLONG now = GetTickCount64();
-
-    if (g_config.loaded && (now - g_config.lastLoadTick) < 250) {
-        return;
-    }
+    uint64_t now = GetTickCount64();
+    if (g_config.loaded && (now - g_config.lastLoadTick) < 250) return;
 
     g_config.bgTransparency = (float)app_ini_get_int(app, L"SAMPLELIST", L"BGTRANSPARENCY", 54) / 100.0f;
     g_config.bgFade = (float)app_ini_get_double(app, L"SAMPLELIST", L"BGFADE", 0.8333333);
@@ -79,10 +58,7 @@ static void sample_list_usage_trigger_load_config(AppState *app)
 void sample_list_usage_trigger_update(AppState *app, double dt)
 {
     bool activeSamples[31] = { false };
-
-    if (!app) {
-        return;
-    }
+    if (!app) return;
 
     sample_list_usage_trigger_load_config(app);
 
@@ -94,21 +70,18 @@ void sample_list_usage_trigger_update(AppState *app, double dt)
         return;
     }
 
-    {
-        const wchar_t *currentFile = player_get_current_file_path(app);
-
-        if (wcscmp(g_lastFile, currentFile) != 0) {
-            copy_wstr_local(g_lastFile, sizeof(g_lastFile) / sizeof(g_lastFile[0]), currentFile);
-            reset_highlights(app);
-        }
+    const wchar_t *currentFile = player_get_current_file_path(app);
+    if (wcscmp(g_lastFile, currentFile) != 0) {
+        wcsncpy(g_lastFile, currentFile, MAX_PATH - 1);
+        g_lastFile[MAX_PATH-1] = L'\0';
+        reset_highlights(app);
     }
 
     for (int channel = 1; channel <= 4; ++channel) {
         QuadrascopeState state;
-
         if (player_get_quadrascope_state(app, channel, &state)) {
             if (state.sampleIndex > 0 && state.sampleIndex <= 31) {
-                if (state.vu > 0.01f || state.active || state.scopeHold > 0.0) {
+                if (state.vu > 0.001f || state.active || state.scopeHold > 0.0) {
                     activeSamples[state.sampleIndex - 1] = true;
                 }
             }
@@ -120,98 +93,28 @@ void sample_list_usage_trigger_update(AppState *app, double dt)
             app->sampleHighlightAlpha[i] = g_config.bgTransparency;
         } else {
             float nextAlpha = app->sampleHighlightAlpha[i] - (float)(g_config.bgFade * dt);
-            if (nextAlpha < 0.0f) {
-                nextAlpha = 0.0f;
-            }
+            if (nextAlpha < 0.0f) nextAlpha = 0.0f;
             app->sampleHighlightAlpha[i] = nextAlpha;
         }
     }
 }
 
-void sample_list_usage_trigger_draw(AppState *app, HDC hdc)
+void sample_list_usage_trigger_draw(AppState *app, HP_DrawContext *ctx)
 {
-    HDC memDC;
-    HBITMAP bmp;
-    HBITMAP oldBmp;
-    RECT r;
-    BLENDFUNCTION blend;
-    unsigned int *pixel = NULL;
-
-    if (!app || !hdc) {
-        return;
-    }
-
-    memDC = CreateCompatibleDC(hdc);
-    if (!memDC) {
-        return;
-    }
-
-    {
-        BITMAPINFO bi;
-        memset(&bi, 0, sizeof(bi));
-        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bi.bmiHeader.biWidth = 1;
-        bi.bmiHeader.biHeight = -1;
-        bi.bmiHeader.biPlanes = 1;
-        bi.bmiHeader.biBitCount = 32;
-        bi.bmiHeader.biCompression = BI_RGB;
-
-        bmp = CreateDIBSection(hdc, &bi, DIB_RGB_COLORS, (void **)&pixel, NULL, 0);
-    }
-
-    if (!bmp) {
-        DeleteDC(memDC);
-        return;
-    }
-
-    oldBmp = (HBITMAP)SelectObject(memDC, bmp);
-
-    if (pixel) {
-        *pixel = 0xFFFFFFFFu;
-    } else {
-        r.left = 0;
-        r.top = 0;
-        r.right = 1;
-        r.bottom = 1;
-        FillRect(memDC, &r, (HBRUSH)GetStockObject(WHITE_BRUSH));
-    }
-
-    blend.BlendOp = AC_SRC_OVER;
-    blend.BlendFlags = 0;
-    blend.AlphaFormat = 0;
+    if (!app || !ctx) return;
+    if (!g_config.loaded) sample_list_usage_trigger_load_config(app);
 
     for (int i = 0; i < 31; ++i) {
         float alpha = app->sampleHighlightAlpha[i];
-
         if (alpha > 0.0f) {
             int alphaByte = (int)(alpha * 255.0f + 0.5f);
+            if (alphaByte < 0) alphaByte = 0;
+            else if (alphaByte > 255) alphaByte = 255;
+
             const HighlightBox *box = &g_boxes[i];
-
-            if (alphaByte < 0) {
-                alphaByte = 0;
-            } else if (alphaByte > 255) {
-                alphaByte = 255;
-            }
-
-            blend.SourceConstantAlpha = (BYTE)alphaByte;
-
-            AlphaBlend(
-                hdc,
-                box->x,
-                box->y,
-                box->w,
-                box->h,
-                memDC,
-                0,
-                0,
-                1,
-                1,
-                blend
-            );
+            HP_Rect r = { box->x, box->y, box->w, box->h };
+            hp_draw_set_color(ctx, (HP_Color){255, 255, 255, (uint8_t)alphaByte});
+            hp_draw_fill_rect(ctx, &r);
         }
     }
-
-    SelectObject(memDC, oldBmp);
-    DeleteObject(bmp);
-    DeleteDC(memDC);
 }

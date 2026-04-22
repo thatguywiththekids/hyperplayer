@@ -1,9 +1,10 @@
 #include "vumeter.h"
 #include "player.h"
-
+#include "renderer.h"
 #include "portability.h"
 #include <stdbool.h>
 #include <stdlib.h>
+#include <wchar.h>
 
 typedef struct BoxRect {
     int x;
@@ -14,10 +15,10 @@ typedef struct BoxRect {
 
 typedef struct VuMeterConfig {
     bool loaded;
-    COLORREF color1;
-    COLORREF color2;
-    COLORREF color3;
-    BYTE alpha;
+    HP_Color color1;
+    HP_Color color2;
+    HP_Color color3;
+    uint8_t alpha;
 } VuMeterConfig;
 
 static const BoxRect g_boxes[] = {
@@ -33,68 +34,53 @@ static float g_level = 0.0f;
 
 static VuMeterConfig g_config = {
     false,
-    RGB(0, 255, 0),
-    RGB(255, 255, 0),
-    RGB(255, 0, 0),
+    {0, 255, 0, 255},
+    {255, 255, 0, 255},
+    {255, 0, 0, 255},
     84
 };
 
 static void build_ini_path(wchar_t *path, size_t pathCount)
 {
     DWORD len;
-
-    if (!path || pathCount == 0) {
-        return;
-    }
+    if (!path || pathCount == 0) return;
 
     len = GetModuleFileNameW(NULL, path, (DWORD)pathCount);
     if (len == 0 || len >= pathCount) {
-        lstrcpynW(path, L"hyperplayer.ini", (int)pathCount);
+        wcsncpy(path, L"hyperplayer.ini", pathCount);
+        path[pathCount - 1] = L'\0';
         return;
     }
 
     while (len > 0) {
         wchar_t c = path[len - 1];
-        if (c == L'\\' || c == L'/') {
-            break;
-        }
+        if (c == L'\\' || c == L'/') break;
         --len;
     }
 
     if (len == 0) {
-        lstrcpynW(path, L"hyperplayer.ini", (int)pathCount);
+        wcsncpy(path, L"hyperplayer.ini", pathCount);
+        path[pathCount - 1] = L'\0';
         return;
     }
 
     path[len] = L'\0';
-    lstrcatW(path, L"hyperplayer.ini");
+    wcscat(path, L"hyperplayer.ini");
 }
 
-static COLORREF parse_hex_color(const wchar_t *text, COLORREF fallback)
+static HP_Color parse_hex_color(const wchar_t *text, HP_Color fallback)
 {
     wchar_t *endPtr;
     unsigned long value;
-    int r;
-    int g;
-    int b;
-
-    if (!text || lstrlenW(text) != 6) {
-        return fallback;
-    }
+    if (!text || wcslen(text) != 6) return fallback;
 
     value = wcstoul(text, &endPtr, 16);
-    if (endPtr == text || *endPtr != L'\0' || value > 0xFFFFFFUL) {
-        return fallback;
-    }
+    if (endPtr == text || *endPtr != L'\0' || value > 0xFFFFFFUL) return fallback;
 
-    r = (int)((value >> 16) & 0xFF);
-    g = (int)((value >> 8) & 0xFF);
-    b = (int)(value & 0xFF);
-
-    return RGB(r, g, b);
+    return hp_color_rgb((uint8_t)((value >> 16) & 0xFF), (uint8_t)((value >> 8) & 0xFF), (uint8_t)(value & 0xFF));
 }
 
-static BYTE parse_alpha_value(const wchar_t *text, BYTE fallback)
+static uint8_t parse_alpha_value(const wchar_t *text, uint8_t fallback)
 {
     wchar_t *endPtr;
     unsigned long value;
@@ -108,7 +94,7 @@ static BYTE parse_alpha_value(const wchar_t *text, BYTE fallback)
         return fallback;
     }
 
-    return (BYTE)value;
+    return (uint8_t)value;
 }
 
 static void load_vumeter_config(void)
@@ -119,103 +105,69 @@ static void load_vumeter_config(void)
     build_ini_path(iniPath, sizeof(iniPath) / sizeof(iniPath[0]));
 
     GetPrivateProfileStringW(L"VUMETER", L"VUCOLOR1", L"", value, sizeof(value) / sizeof(value[0]), iniPath);
-    if (value[0] != L'\0') {
-        g_config.color1 = parse_hex_color(value, g_config.color1);
-    }
+    if (value[0] != L'\0') g_config.color1 = parse_hex_color(value, g_config.color1);
 
     GetPrivateProfileStringW(L"VUMETER", L"VUCOLOR2", L"", value, sizeof(value) / sizeof(value[0]), iniPath);
-    if (value[0] != L'\0') {
-        g_config.color2 = parse_hex_color(value, g_config.color2);
-    }
+    if (value[0] != L'\0') g_config.color2 = parse_hex_color(value, g_config.color2);
 
     GetPrivateProfileStringW(L"VUMETER", L"VUCOLOR3", L"", value, sizeof(value) / sizeof(value[0]), iniPath);
-    if (value[0] != L'\0') {
-        g_config.color3 = parse_hex_color(value, g_config.color3);
-    }
+    if (value[0] != L'\0') g_config.color3 = parse_hex_color(value, g_config.color3);
 
     GetPrivateProfileStringW(L"VUMETER", L"VUTRANSPARENCY", L"", value, sizeof(value) / sizeof(value[0]), iniPath);
-    if (value[0] != L'\0') {
-        g_config.alpha = parse_alpha_value(value, g_config.alpha);
-    }
+    if (value[0] != L'\0') g_config.alpha = parse_alpha_value(value, g_config.alpha);
 
     g_config.loaded = true;
 }
 
-static COLORREF get_box_color(int index, int total)
+static HP_Color get_box_color(int index, int total)
 {
     float t = (float)index / (float)(total - 1);
+    HP_Color c;
 
-    if (!g_config.loaded) {
-        load_vumeter_config();
-    }
+    if (!g_config.loaded) load_vumeter_config();
 
-    if (t < 0.70f) {
-        return g_config.color1;
-    } else if (t < 0.90f) {
-        return g_config.color2;
-    } else {
-        return g_config.color3;
-    }
+    if (t < 0.70f) c = g_config.color1;
+    else if (t < 0.90f) c = g_config.color2;
+    else c = g_config.color3;
+
+    c.a = g_config.alpha;
+    return c;
 }
 
 void vumeter_update(AppState *app, double dt)
 {
     float target = 0.0f;
-
     (void)dt;
 
     if (app && player_is_loaded(app) && !player_is_paused(app) && !player_is_stopped(app)) {
         target = player_get_recent_output_level(app) * 5.0f;
-        if (target > 1.0f) {
-            target = 1.0f;
-        }
+        if (target > 1.0f) target = 1.0f;
     }
 
-    if (target > g_level) {
-        g_level = g_level + ((target - g_level) * 0.35f);
-    } else {
-        g_level = g_level + ((target - g_level) * 0.08f);
-    }
+    if (target > g_level) g_level = g_level + ((target - g_level) * 0.35f);
+    else g_level = g_level + ((target - g_level) * 0.08f);
 
-    if (g_level < 0.0f) {
-        g_level = 0.0f;
-    }
-    if (g_level > 1.0f) {
-        g_level = 1.0f;
-    }
+    if (g_level < 0.0f) g_level = 0.0f;
+    if (g_level > 1.0f) g_level = 1.0f;
 }
 
-void vumeter_draw(AppState *app, HDC hdc)
+void vumeter_draw(AppState *app, HP_DrawContext *ctx)
 {
     int lit;
     int total;
-    HPEN pen;
-    HPEN oldPen;
-
     (void)app;
 
-    if (!hdc) {
-        return;
-    }
-
-    if (!g_config.loaded) {
-        load_vumeter_config();
-    }
+    if (!ctx) return;
+    if (!g_config.loaded) load_vumeter_config();
 
     total = (int)(sizeof(g_boxes) / sizeof(g_boxes[0]));
     lit = (int)(g_level * (float)total + 0.5f);
 
-    pen = (HPEN)GetStockObject(NULL_PEN);
-    oldPen = (HPEN)SelectObject(hdc, pen);
-
     for (int i = 0; i < lit && i < total; ++i) {
         const BoxRect *box = &g_boxes[i];
-        COLORREF color = get_box_color(i, total);
-        HBRUSH brush = CreateSolidBrush(color);
-        RECT r = { box->x, box->y, box->x + box->w, box->y + box->h };
-        FillRect(hdc, &r, brush);
-        DeleteObject(brush);
+        HP_Color color = get_box_color(i, total);
+        HP_Rect r = { box->x, box->y, box->w, box->h };
+        hp_draw_set_color(ctx, color);
+        hp_draw_fill_rect(ctx, &r);
     }
-
-    SelectObject(hdc, oldPen);
 }
