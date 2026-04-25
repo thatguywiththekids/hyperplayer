@@ -1,18 +1,18 @@
-**Hyperplayer**
+**Hyperplayer SDL**
 
-Hyperplayer is a Windows desktop Amiga-MOD player written in C, built around a tracker-style interface inspired by the Amiga ProTracker 2.3.
-I made this mainly to use as a base for videocapping playback for demoparty competitions and YouTube videos. I would consider it to be a "Amiga MOD compo player".
+Hyperplayer SDL is a cross-platform desktop Amiga-MOD player written in C11, built around a tracker-style interface inspired by the Amiga ProTracker 2.3.
+It is based on Hyperplayer that was originally developed for Windows.
 It loads and plays module files, shows live playback state, displays pattern data, exposes sample information, and renders multiple synchronized visualizers in the same UI. The app initializes a default hyperplayer.ini on first start, opens a configurable default folder, and is designed around a fixed 1920×1080 interface layout. If the file hyperplayer.ini is missing, it will create it on start with all the default settings.
 
 **THANKS!**
 
-Thanks to LokasNT and Fluke73 (RetroGamingMusic) for beta-testing, coming up with new ideas, changes, fixes and such!
+Thanks to Hyperunknown who released the original Hyperplayer source!
 
 **What it does**
 
 Hyperplayer is focused on .MOD playback and browsing. The built-in file browser shows folders plus MOD files, lets you move through drives and directories, and loads a selected module directly into the player. Once a file is loaded, the browser is hidden so the visualizer panel takes over that area instead, but can be opened again by clicking on the "File Browser" text.
 The File Browser is listing all "*.mod" files aswell as files starting with "mod." as per the Amiga standard.
-During playback, Hyperplayer keeps separate OpenMPT instances for rendering audio and for UI/state tracking, so it can show song position, pattern/order/row data, sample usage, waveform previews, and visual meters while the song is playing. Audio is rendered at 44.1 kHz through the Windows waveOut API.
+During playback, Hyperplayer keeps separate OpenMPT instances for rendering audio and for UI/state tracking, so it can show song position, pattern/order/row data, sample usage, waveform previews, and visual meters while the song is playing. Audio is rendered at 44.1 kHz via SDL3's audio stream API.
 
 **Main features**
 
@@ -62,13 +62,13 @@ While playing, use the pattern view, sample list, waveform display, spectrum ana
 
 **What it uses**
 
-Hyperplayer is built with plain Win32 C and uses:
- * libopenmpt for module decoding, pattern access, metadata, timing, and playback state
- * Windows waveOut for audio output
- * WIC for loading PNG image assets from memory
- * Embedded resources for the background image, ProTracker font, mouse cursor PNG, and OpenMPT runtime files
- * COM for WIC-related initialization
- * Double-buffered drawing to reduce flicker during UI updates
+Hyperplayer is built with C11 and uses:
+ * **SDL3:** For cross-platform window management, graphics rendering (via a Win32 GDI shim), and audio output.
+ * **libopenmpt:** For module decoding, pattern access, metadata, timing, and playback state.
+ * **SDL3_image:** For loading PNG image assets.
+ * **SDL3_ttf:** For high-quality text rendering.
+ * **Win32 GDI Shim:** A custom portability layer that allows the original GDI-based rendering code to run on top of SDL3.
+ * **Double-buffered drawing:** To ensure smooth UI updates and prevent flickering.
 
 **Configuration**
 
@@ -85,12 +85,25 @@ VISUALIZER
 
 This makes it possible to change the startup folder, stereo image, text colors, waveform colors, VU colors, analyzer layout, sample highlight behavior, and the behavior of the radial tunnel visualizer without recompiling.
 
-If you want to compile it yourself, here is the line I use to compile, using w64devkit:
-C:\winprog\C\bin\gcc.exe -B C:\winprog\C\bin\ -std=c11 -O2 -Wall -Wextra -municode -mwindows main.c app.c ui.c directory_listing_win32.c action_buttons.c player.c pattern_view.c sample_list.c sample_list_usage_trigger.c sample_display.c spectrumanalyzer.c vumeter.c quadrascope.c tunnelvisualizer.c mousecursor.c urls.c resources.o -o hyperplayer_v1.exe -lgdi32 -lmsimg32 -lole32 -luuid -lwindowscodecs -lwinmm -lshell32 -lm
-You will obviously have to change the paths.
+**Building**
+
+The project uses CMake for building across different platforms.
+
+### Prerequisites
+- CMake 3.25+
+- SDL3, SDL3_image, SDL3_ttf
+- libopenmpt 0.6.0+ (pkg-config)
+- A C11 compatible compiler (GCC, Clang, MSVC)
+
+### Build Commands
+```bash
+# Create build directory
+cmake -B build
+
+# Build the project
+cmake --build build
+```
 
 **http://www.hyperunknown.net**
 
 ![Hyperplayer screenshot](screenshots/hyperplayer-screenshot.png)
-
-

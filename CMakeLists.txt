@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.25)
 project(hyperplayer C)
 
 set(CMAKE_C_STANDARD 11)
@@ -9,7 +9,7 @@ find_package(SDL3 REQUIRED)
 find_package(SDL3_image REQUIRED)
 find_package(SDL3_ttf REQUIRED)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(OPENMPT REQUIRED libopenmpt)
+pkg_check_modules(OPENMPT REQUIRED libopenmpt>=0.6.0)
 
 set(COMMON_SOURCES
     action_buttons.c
