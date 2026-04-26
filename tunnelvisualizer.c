@@ -320,7 +320,6 @@ void tunnelvisualizer_update(AppState *app, double dt) {
         }
         g_radial.bass = frameBass / 8.0f;
         g_radial.treble = frameHigh / (BAND_COUNT - 24);
-        g_radial.agcGain = lerpf_local(g_radial.agcGain, clampf_local(0.18f/(meanRaw/(BAND_COUNT-g_visualizer.agcIgnoreLowBands)+0.0001f), 0.16f, 3.2f), 0.45f);
         
         float frameEnergy = (frameBass + frameMid + frameHigh) / BAND_COUNT;
         if (frameEnergy > g_radial.energy * 1.5f && frameEnergy > 0.15f) g_radial.beatFlash = 1.0f;
@@ -328,6 +327,10 @@ void tunnelvisualizer_update(AppState *app, double dt) {
         
         g_radial.energy = lerpf_local(g_radial.energy, frameEnergy, 0.72f);
         g_radial.rotation += dt * (0.10f + g_radial.energy*0.18f) * g_visualizer.rotationSpeed;
+
+        // Smoother, less aggressive AGC
+        float targetGain = clampf_local(0.22f/(meanRaw/(BAND_COUNT-g_visualizer.agcIgnoreLowBands)+0.0001f), 0.35f, 2.8f);
+        g_radial.agcGain = lerpf_local(g_radial.agcGain, targetGain, 0.08f); 
     } else {
         for (int i=0; i<BAND_COUNT; ++i) { g_radial.bands[i] = lerpf_local(g_radial.bands[i], 0, 0.7f); g_radial.bands[i] -= dt*g_visualizer.barDeclineSpeed; if (g_radial.bands[i]<0) g_radial.bands[i]=0; }
         g_radial.energy = lerpf_local(g_radial.energy, 0, 0.55f);
@@ -383,19 +386,20 @@ void tunnelvisualizer_draw(AppState *app, HP_DrawContext *ctx) {
     int innerRadius = (TV_BOX_W < TV_BOX_H ? TV_BOX_W / 2 : TV_BOX_H / 2) - 56;
     if (innerRadius < 40) innerRadius = 40;
 
-    if (bloom_ensure(ctx, TV_BOX_W / 2, TV_BOX_H / 2)) {
-        float bs = 0.5f;
+    if (bloom_ensure(ctx, TV_BOX_W, TV_BOX_H)) {
+        float bs = 1.0f;
         memset(g_bloom.src, 0, g_bloom.width * g_bloom.height * 4);
         
-        float auraStrength = clampf_local((g_radial.energy * 0.85f + g_radial.bass * 0.95f + g_radial.beatFlash * 0.45f) * g_visualizer.globalGlowStrength, 0.0f, 1.8f);
+        float auraStrength = clampf_local((g_radial.energy * 0.95f + g_radial.bass * 1.1f + g_radial.beatFlash * 0.55f) * g_visualizer.globalGlowStrength, 0.0f, 2.2f);
         float hueBase = fmodf((float)(g_radial.rotation * 0.02f * g_visualizer.colorCycleSpeed), 1.0f);
         if (hueBase < 0) hueBase += 1.0f;
 
-        int auraRx = (int)lroundf(((double)innerRadius + 90.0) * (double)bs);
-        int auraRy = (int)lroundf((((double)innerRadius * 0.72) + 58.0) * (double)bs);
+        int auraRx = (int)lroundf(((double)innerRadius + 105.0) * (double)bs);
+        int auraRy = (int)lroundf((((double)innerRadius * 0.78) + 68.0) * (double)bs);
 
-        buffer_add_soft_ellipse(g_bloom.src, g_bloom.width, g_bloom.height, cx*bs, cy*bs, (float)auraRx, (float)auraRy, hsv_to_rgb(hueBase + 0.02f, 0.65f, 1.0f), auraStrength * 0.18f);
-        buffer_add_soft_ellipse(g_bloom.src, g_bloom.width, g_bloom.height, cx*bs, cy*bs, (float)auraRx*0.70f, (float)auraRy*0.70f, hsv_to_rgb(hueBase + 0.18f, 0.70f, 1.00f), auraStrength * 0.24f);
+        buffer_add_soft_ellipse(g_bloom.src, g_bloom.width, g_bloom.height, cx*bs, cy*bs, (float)auraRx, (float)auraRy, hsv_to_rgb(hueBase + 0.02f, 0.62f, 1.0f), auraStrength * 0.22f);
+        buffer_add_soft_ellipse(g_bloom.src, g_bloom.width, g_bloom.height, cx*bs, cy*bs, (float)auraRx*0.72f, (float)auraRy*0.72f, hsv_to_rgb(hueBase + 0.16f, 0.68f, 1.00f), auraStrength * 0.32f);
+        buffer_add_soft_ellipse(g_bloom.src, g_bloom.width, g_bloom.height, cx*bs, cy*bs, (float)auraRx*0.48f, (float)auraRy*0.48f, hsv_to_rgb(hueBase + 0.28f, 0.50f, 1.00f), auraStrength * 0.40f);
 
         for (int i = 0; i < BAND_COUNT; ++i) {
             float t = (float)i / BAND_COUNT;
@@ -409,14 +413,14 @@ void tunnelvisualizer_draw(AppState *app, HP_DrawContext *ctx) {
             float ex = (cx + cosf(angle) * ((float)innerRadius + len)) * bs;
             float ey = (cy + sinf(angle) * ((float)innerRadius + len)) * bs;
             
-            HP_Color col = hsv_to_rgb(fmodf(t + hueBase, 1.0f), 0.78f, 1.00f);
-            float radiusF = (2.8f + amp * 4.8f + g_visualizer.globalGlowStrength * 2.5f) * bs;
-            float intensity = (0.10f + amp * 0.22f + g_radial.beatFlash * 0.08f) * g_visualizer.globalGlowStrength;
+            HP_Color col = hsv_to_rgb(fmodf(t + hueBase, 1.0f), 0.76f, 1.00f);
+            float radiusF = (3.2f + amp * 5.2f + g_visualizer.globalGlowStrength * 2.8f) * bs;
+            float intensity = (0.12f + amp * 0.28f + g_radial.beatFlash * 0.10f) * g_visualizer.globalGlowStrength;
 
             buffer_add_soft_line(g_bloom.src, g_bloom.width, g_bloom.height, sx, sy, ex, ey, radiusF, col, intensity);
         }
 
-        int br = clampf_local((4.0f + g_visualizer.globalGlowStrength * 4.0f) * bs, 1, 8);
+        int br = clampf_local((5.0f + g_visualizer.globalGlowStrength * 5.0f) * bs, 1, 10);
         blur_horizontal(g_bloom.src, g_bloom.tmp, g_bloom.width, g_bloom.height, br);
         blur_vertical_to_premult(g_bloom.tmp, (unsigned int*)g_bloom.pixels, g_bloom.width, g_bloom.height, br, 1.0f);
         SDL_UpdateTexture(g_bloom.texture, NULL, g_bloom.pixels, g_bloom.width * 4);
