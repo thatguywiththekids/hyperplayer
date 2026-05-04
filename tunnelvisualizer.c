@@ -46,12 +46,14 @@ typedef struct VisualizerConfig {
     float highPresenceFloor;
     HP_Color backgroundColor;
     HP_Color starColor;
+    float bloomResolution;
 } VisualizerConfig;
 
 static const VisualizerConfig g_visualizerDefaults = {
     2.00f, 3.60f, 1.50f, 2.00f, 0.90f, 2.00f, 0.63f, 7000, 0.36f, 1.00f,
     20, 1.10f, 0.85f, 0.018f, 20, 0.90f,
-    {6, 6, 10, 255}, {255, 255, 255, 255}
+    {6, 6, 10, 255}, {255, 255, 255, 255},
+    0.50f
 };
 
 static VisualizerConfig g_visualizer;
@@ -114,6 +116,9 @@ static void visualizer_load_config(AppState *app) {
     g_visualizer.highPresenceFloor = (float)app_ini_get_double(app, L"VISUALIZER", L"VIS_HIGH_PRESENCE_FLOOR", 0.9);
     g_visualizer.backgroundColor = app_ini_get_color(app, L"VISUALIZER", L"VIS_BACKGROUND_COLOR", (HP_Color){6, 6, 10, 255});
     g_visualizer.starColor = app_ini_get_color(app, L"VISUALIZER", L"VIS_STAR_COLOR", (HP_Color){255, 255, 255, 255});
+    g_visualizer.bloomResolution = (float)app_ini_get_double(app, L"VISUALIZER", L"VIS_BLOOM_RESOLUTION", 0.5);
+    if (g_visualizer.bloomResolution < 0.1f) g_visualizer.bloomResolution = 0.1f;
+    if (g_visualizer.bloomResolution > 2.0f) g_visualizer.bloomResolution = 2.0f;
     if (g_visualizer.starfieldCount < 1) g_visualizer.starfieldCount = 1;
     g_visualizerLoaded = true;
 }
@@ -223,37 +228,96 @@ static void buffer_add_soft_line(unsigned int *buffer, int w, int h, float x1, f
     }
 }
 
+/* 
+ * Horizontal Box Blur using a sliding window.
+ * Complexity: O(w * h), independent of radius.
+ */
 static void blur_horizontal(const unsigned int *src, unsigned int *dst, int w, int h, int radius) {
+    if (radius <= 0) {
+        memcpy(dst, src, w * h * 4);
+        return;
+    }
     for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-            int r=0, g=0, b=0, count=0;
-            for (int k = -radius; k <= radius; ++k) {
-                int xx = x + k; if (xx < 0 || xx >= w) continue;
-                unsigned int p = src[y*w + xx];
-                b += (p & 255); g += ((p >> 8) & 255); r += ((p >> 16) & 255); count++;
+        int r = 0, g = 0, b = 0, count = 0;
+        // Initialize the sliding window sum for the start of the row
+        for (int x = -radius; x <= radius; ++x) {
+            if (x >= 0 && x < w) {
+                unsigned int p = src[y * w + x];
+                b += (p & 255); g += ((p >> 8) & 255); r += ((p >> 16) & 255);
+                count++;
             }
-            if (count > 0) dst[y*w + x] = pack_bgra(r/count, g/count, b/count, 255);
-            else dst[y*w + x] = src[y*w + x];
+        }
+        // Slide the window across the row
+        for (int x = 0; x < w; ++x) {
+            dst[y * w + x] = pack_bgra(r / count, g / count, b / count, 255);
+            
+            // Add the pixel entering the window from the right
+            int next_x = x + radius + 1;
+            if (next_x < w) {
+                unsigned int p = src[y * w + next_x];
+                b += (p & 255); g += ((p >> 8) & 255); r += ((p >> 16) & 255);
+                count++;
+            }
+            // Subtract the pixel leaving the window from the left
+            int prev_x = x - radius;
+            if (prev_x >= 0) {
+                unsigned int p = src[y * w + prev_x];
+                b -= (p & 255); g -= ((p >> 8) & 255); r -= ((p >> 16) & 255);
+                count--;
+            }
         }
     }
 }
 
+/* 
+ * Vertical Box Blur with Premultiplied Alpha conversion.
+ * Complexity: O(w * h), independent of radius.
+ */
 static void blur_vertical_to_premult(const unsigned int *src, unsigned int *dst, int w, int h, int radius, float strength) {
-    for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-            int r=0, g=0, b=0, count=0;
-            for (int k = -radius; k <= radius; ++k) {
-                int yy = y + k; if (yy < 0 || yy >= h) continue;
-                unsigned int p = src[yy*w + x];
-                b += (p & 255); g += ((p >> 8) & 255); r += ((p >> 16) & 255); count++;
+    if (radius <= 0) {
+        // Fallback: Just convert to premultiplied alpha if no blur is requested
+        for (int i = 0; i < w * h; ++i) {
+            unsigned int p = src[i];
+            int r = (int)((p >> 16 & 255) * strength);
+            int g = (int)((p >> 8 & 255) * strength);
+            int b = (int)((p & 255) * strength);
+            if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
+            int a = r; if (g > a) a = g; if (b > a) a = b;
+            dst[i] = pack_bgra(r, g, b, a);
+        }
+        return;
+    }
+    for (int x = 0; x < w; ++x) {
+        int r = 0, g = 0, b = 0, count = 0;
+        // Initialize the sliding window sum for the start of the column
+        for (int y = -radius; y <= radius; ++y) {
+            if (y >= 0 && y < h) {
+                unsigned int p = src[y * w + x];
+                b += (p & 255); g += ((p >> 8) & 255); r += ((p >> 16) & 255);
+                count++;
             }
-            if (count > 0) {
-                int rr = (int)(r/count * strength), gg = (int)(g/count * strength), bb = (int)(b/count * strength);
-                if (rr>255) rr=255; if (gg>255) gg=255; if (bb>255) bb=255;
-                int aa = rr; if (gg>aa) aa=gg; if (bb>aa) aa=bb;
-                dst[y*w + x] = pack_bgra(rr, gg, bb, aa);
-            } else {
-                dst[y*w + x] = src[y*w + x];
+        }
+        // Slide the window down the column
+        for (int y = 0; y < h; ++y) {
+            int rr = (int)(r / count * strength), gg = (int)(g / count * strength), bb = (int)(b / count * strength);
+            if (rr > 255) rr = 255; if (gg > 255) gg = 255; if (bb > 255) bb = 255;
+            // Calculate pseudo-alpha based on brightness for the ADD blend mode
+            int aa = rr; if (gg > aa) aa = gg; if (bb > aa) aa = bb;
+            dst[y * w + x] = pack_bgra(rr, gg, bb, aa);
+
+            // Add the pixel entering from the bottom
+            int next_y = y + radius + 1;
+            if (next_y < h) {
+                unsigned int p = src[next_y * w + x];
+                b += (p & 255); g += ((p >> 8) & 255); r += ((p >> 16) & 255);
+                count++;
+            }
+            // Subtract the pixel leaving from the top
+            int prev_y = y - radius;
+            if (prev_y >= 0) {
+                unsigned int p = src[prev_y * w + x];
+                b -= (p & 255); g -= ((p >> 8) & 255); r -= ((p >> 16) & 255);
+                count--;
             }
         }
     }
@@ -386,8 +450,8 @@ void tunnelvisualizer_draw(AppState *app, HP_DrawContext *ctx) {
     int innerRadius = (TV_BOX_W < TV_BOX_H ? TV_BOX_W / 2 : TV_BOX_H / 2) - 56;
     if (innerRadius < 40) innerRadius = 40;
 
-    if (bloom_ensure(ctx, TV_BOX_W, TV_BOX_H)) {
-        float bs = 1.0f;
+    float bs = g_visualizer.bloomResolution;
+    if (bloom_ensure(ctx, (int)(TV_BOX_W * bs), (int)(TV_BOX_H * bs))) {
         memset(g_bloom.src, 0, g_bloom.width * g_bloom.height * 4);
         
         float auraStrength = clampf_local((g_radial.energy * 0.95f + g_radial.bass * 1.1f + g_radial.beatFlash * 0.55f) * g_visualizer.globalGlowStrength, 0.0f, 2.2f);
