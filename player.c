@@ -32,7 +32,7 @@ struct PlayerState {
     openmpt_module *mod_audio;
     openmpt_module_ext *mod_audio_ext;
     
-    // UI instance (synchronized to "the now" for visual display)
+    // UI instance (synchronized to audio going to speakers, for visual display)
     openmpt_module *mod_ui;
     openmpt_module_ext *mod_ui_ext;
     
@@ -703,14 +703,26 @@ void player_update(AppState *app, double dt) {
     PlayerState *p = app->player;
     if (!p || !p->mod_audio || p->paused || p->stopped) return;
 
-    // 1. Sync UI Instance to match current audible timestamp using catch-up
+    /*
+     * Problem: Tracker modules are stateful. Reading audio advances the
+     * module's internal clock. Because ~100ms of audio is buffered to prevent
+     * stuttering, the libopenmpt instance is always 100ms ahead of what the
+     * listener actually hears.
+     *
+     * Solution: Maintain two libopenmpt instances.
+     *   mod_audio: Runs ahead to fill the hardware audio buffers.
+     *   mod_ui:    Used only for display. We try to read frames in sync with
+     *              actual playback to the speakers.
+     */
+
+    // Calculate the "audible timestamp".
     int queuedBytes = SDL_GetAudioStreamQueued(p->stream);
-    int64_t latencySamples = queuedBytes / 4;
+    int64_t latencySamples = queuedBytes / 4; // 16-bit stereo assumed
     int64_t audibleSamplesTotal = (int64_t)p->totalSamplesRead - latencySamples;
     if (audibleSamplesTotal < 0) audibleSamplesTotal = 0;
-    
-    // If we've drifted too far or jumped, force a hard seek
-    if (audibleSamplesTotal < p->uiSamplesProcessed || (audibleSamplesTotal - p->uiSamplesProcessed) > 88200) {
+
+    // If we've drifted too far or jumped, force a hard seek.
+    if (audibleSamplesTotal < p->uiSamplesProcessed || (audibleSamplesTotal - p->uiSamplesProcessed) > (p->sampleRate / 2)) {
         double audibleSeconds = (double)audibleSamplesTotal / (double)p->sampleRate;
         openmpt_module_set_position_seconds(p->mod_ui, audibleSeconds);
         p->uiSamplesProcessed = audibleSamplesTotal;
@@ -722,10 +734,10 @@ void player_update(AppState *app, double dt) {
         float dummyL[1024], dummyR[1024];
         while (toProcess > 0) {
             int chunk = toProcess > 1024 ? 1024 : (int)toProcess;
-            size_t actualRead = openmpt_module_read_float_stereo(p->mod_ui, p->sampleRate, chunk, dummyL, dummyR);
-            if (actualRead == 0) break;
-            toProcess -= (int64_t)actualRead;
-            p->uiSamplesProcessed += (int64_t)actualRead;
+            size_t read = openmpt_module_read_float_stereo(p->mod_ui, p->sampleRate, chunk, dummyL, dummyR);
+            if (read == 0) break;
+            toProcess -= (int64_t)read;
+            p->uiSamplesProcessed += (int64_t)read;
         }
     }
 
