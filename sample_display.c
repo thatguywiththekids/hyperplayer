@@ -17,11 +17,13 @@ static const HP_Color COLOR_INFO = {187, 187, 187, 255};
 static const HP_Color COLOR_SHADOW = {89, 89, 89, 255};
 
 static HP_Color g_colorWaveform = {255, 221, 0, 255};
+static HP_Color g_colorPlayback = {255, 255, 255, 255};
 static bool g_configLoaded = false;
 
 static void load_sample_display_config(AppState *app)
 {
     g_colorWaveform = app_ini_get_color(app, L"SAMPLEVIEW", L"SAMPLECOLOR", DEFAULT_COLOR_WAVEFORM);
+    g_colorPlayback = app_ini_get_color(app, L"SAMPLEVIEW", L"PLAYBACKCOLOR", (HP_Color){255, 255, 255, 255});
     g_configLoaded = true;
 }
 
@@ -83,6 +85,46 @@ void sample_display_draw(AppState *app, HP_DrawContext *ctx)
         int y2 = (int)(midY - (minv * (AREA_H * 0.45f)));
 
         hp_draw_line(ctx, px, y1, px, y2);
+    }
+
+    // Draw playback position indicator(s) if the sample is currently playing on any channel.
+    const float *values = NULL;
+    int sampleCount = 0;
+    int loopStart = 0;
+    int loopLength = 0;
+    if (player_get_sample_values(app, sampleIndex, &values, &sampleCount, &loopStart, &loopLength) && sampleCount > 0) {
+        int activeWidth = (previewCount < AREA_W) ? previewCount : AREA_W;
+        for (int channel = 1; channel <= 4; ++channel) {
+            QuadrascopeState chState;
+            if (player_get_quadrascope_state(app, channel, &chState)) {
+                if (chState.active && chState.sampleIndex == sampleIndex && chState.frequency > 0.0) {
+                    double pos = chState.samplePos;
+                    bool useLoopMode = (loopLength > 2 && (loopStart + 1) <= sampleCount);
+                    if (useLoopMode) {
+                        int loopStart1 = loopStart + 1;
+                        int loopEnd = loopStart1 + loopLength - 1;
+                        if (loopEnd > sampleCount) loopEnd = sampleCount;
+                        if (pos < 1.0) pos = 1.0;
+                        if (pos > (double)loopEnd) {
+                            int loopSpan = loopEnd - loopStart1 + 1;
+                            if (loopSpan < 1) loopSpan = 1;
+                            pos = loopStart1 + fmod((pos - loopStart1), (double)loopSpan);
+                        }
+                    } else {
+                        if (pos < 1.0) pos = 1.0;
+                        else if (pos > (double)sampleCount) pos = (double)sampleCount;
+                    }
+
+                    double frac = (pos - 1.0) / (double)(sampleCount > 1 ? sampleCount : 1);
+                    if (frac < 0.0) frac = 0.0;
+                    if (frac > 1.0) frac = 1.0;
+
+                    int lineX = AREA_X + (int)(frac * activeWidth);
+                    hp_draw_set_color(ctx, g_colorPlayback);
+                    hp_draw_line(ctx, lineX, AREA_Y, lineX, AREA_Y + AREA_H - 1);
+                }
+            }
+        }
     }
 
     wchar_t numText[8];
