@@ -1,7 +1,6 @@
 #include "spectrumanalyzer.h"
 #include "player.h"
 #include "renderer.h"
-#include "portability.h"
 #include <math.h>
 #include <string.h>
 #include <stdbool.h>
@@ -61,41 +60,6 @@ static double lerp(double a, double b, double t)
     return a + (b - a) * t;
 }
 
-static HP_Color parse_hex_color(const wchar_t *text, HP_Color fallback)
-{
-    wchar_t *endPtr;
-    unsigned long value;
-    if (!text || wcslen(text) != 6) return fallback;
-
-    value = wcstoul(text, &endPtr, 16);
-    if (endPtr == text || *endPtr != L'\0' || value > 0xFFFFFFUL) return fallback;
-
-    return hp_color_rgb((uint8_t)((value >> 16) & 0xFF), (uint8_t)((value >> 8) & 0xFF), (uint8_t)(value & 0xFF));
-}
-
-static void build_ini_path(wchar_t *path, size_t pathCount)
-{
-    DWORD len;
-    if (!path || pathCount == 0) return;
-
-    len = GetModuleFileNameW(NULL, path, (DWORD)pathCount);
-    if (len == 0 || len >= pathCount) {
-        wcsncpy(path, L"hyperplayer.ini", pathCount);
-        path[pathCount - 1] = L'\0';
-        return;
-    }
-
-    for (size_t i = (size_t)len; i > 0; --i) {
-        if (path[i - 1] == L'\\' || path[i - 1] == L'/') {
-            wcsncpy(path + i, L"hyperplayer.ini", pathCount - i);
-            path[pathCount - 1] = L'\0';
-            return;
-        }
-    }
-    wcsncpy(path, L"hyperplayer.ini", pathCount);
-    path[pathCount - 1] = L'\0';
-}
-
 static int normalize_fft_size(int value)
 {
     int normalized = 64;
@@ -105,30 +69,19 @@ static int normalize_fft_size(int value)
     return normalized;
 }
 
-static void load_config_from_ini(void)
+static void load_config_from_ini(const AppState *app)
 {
-    wchar_t iniPath[MAX_PATH];
-    wchar_t value[64];
-
     if (g_configLoaded) return;
-    build_ini_path(iniPath, sizeof(iniPath) / sizeof(iniPath[0]));
 
-    g_cfg.fftSize = GetPrivateProfileIntW(L"SPECTRUMANALYZER", L"FFT_SIZE", g_cfg.fftSize, iniPath);
-    g_cfg.bandCount = GetPrivateProfileIntW(L"SPECTRUMANALYZER", L"BAND_COUNT", g_cfg.bandCount, iniPath);
-    
-    GetPrivateProfileStringW(L"SPECTRUMANALYZER", L"MIN_HZ", L"", value, 64, iniPath);
-    if (value[0] != L'\0') g_cfg.minHz = wcstod(value, NULL);
-    
-    GetPrivateProfileStringW(L"SPECTRUMANALYZER", L"MAX_HZ", L"", value, 64, iniPath);
-    if (value[0] != L'\0') g_cfg.maxHz = wcstod(value, NULL);
-
-    g_cfg.barW = GetPrivateProfileIntW(L"SPECTRUMANALYZER", L"BAR_W", g_cfg.barW, iniPath);
-    g_cfg.gapX = GetPrivateProfileIntW(L"SPECTRUMANALYZER", L"GAP_X", g_cfg.gapX, iniPath);
-    g_cfg.slatH = GetPrivateProfileIntW(L"SPECTRUMANALYZER", L"SLAT_H", g_cfg.slatH, iniPath);
-    g_cfg.slatGap = GetPrivateProfileIntW(L"SPECTRUMANALYZER", L"SLAT_GAP", g_cfg.slatGap, iniPath);
-
-    GetPrivateProfileStringW(L"SPECTRUMANALYZER", L"BAR_COLOR", L"", value, 64, iniPath);
-    if (value[0] != L'\0') g_cfg.barColor = parse_hex_color(value, g_cfg.barColor);
+    g_cfg.fftSize = app_ini_get_int(app, L"SPECTRUMANALYZER", L"FFT_SIZE", g_cfg.fftSize);
+    g_cfg.bandCount = app_ini_get_int(app, L"SPECTRUMANALYZER", L"BAND_COUNT", g_cfg.bandCount);
+    g_cfg.minHz = app_ini_get_double(app, L"SPECTRUMANALYZER", L"MIN_HZ", g_cfg.minHz);
+    g_cfg.maxHz = app_ini_get_double(app, L"SPECTRUMANALYZER", L"MAX_HZ", g_cfg.maxHz);
+    g_cfg.barW = app_ini_get_int(app, L"SPECTRUMANALYZER", L"BAR_W", g_cfg.barW);
+    g_cfg.gapX = app_ini_get_int(app, L"SPECTRUMANALYZER", L"GAP_X", g_cfg.gapX);
+    g_cfg.slatH = app_ini_get_int(app, L"SPECTRUMANALYZER", L"SLAT_H", g_cfg.slatH);
+    g_cfg.slatGap = app_ini_get_int(app, L"SPECTRUMANALYZER", L"SLAT_GAP", g_cfg.slatGap);
+    g_cfg.barColor = app_ini_get_color(app, L"SPECTRUMANALYZER", L"BAR_COLOR", g_cfg.barColor);
 
     // Normalization & Range Checks
     g_cfg.fftSize = normalize_fft_size(g_cfg.fftSize);
@@ -244,12 +197,12 @@ static int hz_to_bin(double hz)
     return bin;
 }
 
-static void init_tables(void)
+static void init_tables(const AppState *app)
 {
     if (g_initialized) return;
-    load_config_from_ini();
+    load_config_from_ini(app);
     if (!allocate_tables()) return;
-
+    
     for (int n = 0; n < g_cfg.fftSize; ++n) {
         g_window[n] = 0.5 * (1.0 - cos((2.0 * 3.14159265358979323846 * (double)n) / (double)(g_cfg.fftSize - 1)));
     }
@@ -273,7 +226,7 @@ static void init_tables(void)
 void spectrumanalyzer_update(AppState *app, double dt)
 {
     (void)dt;
-    init_tables();
+    init_tables(app);
     if (!g_initialized || !g_bars) return;
 
     if (!player_get_recent_mono_window(app, g_mono, g_cfg.fftSize)) return;
@@ -326,9 +279,8 @@ void spectrumanalyzer_draw(AppState *app, HP_DrawContext *ctx)
     const int barStep = g_cfg.barW + g_cfg.gapX;
     const int stepY = g_cfg.slatH + g_cfg.slatGap;
 
-    (void)app;
     if (!ctx) return;
-    init_tables();
+    init_tables(app);
     if (!g_initialized || !g_bars) return;
 
     hp_draw_set_color(ctx, g_cfg.barColor);

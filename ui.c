@@ -56,7 +56,7 @@ void ui_draw_shadowed_text(
     int shadowDx,
     int shadowDy,
     const HP_Rect *clipRect,
-    UINT format
+    uint32_t format
 ) {
     if (!ctx || !text) return;
 
@@ -65,7 +65,7 @@ void ui_draw_shadowed_text(
 
     hp_draw_set_font(ctx, font);
 
-    if (format & 0x00000002) { // DT_RIGHT
+    if (format & HP_TEXT_RIGHT) { // DT_RIGHT
         int tw, th;
         hp_get_text_size(ctx, text, &tw, &th);
         if (clipRect) {
@@ -76,7 +76,7 @@ void ui_draw_shadowed_text(
     wchar_t truncated[256];
     const wchar_t *textToDraw = text;
 
-    if ((format & 0x00004000) && clipRect) { // DT_END_ELLIPSIS
+    if ((format & HP_TEXT_END_ELLIPSIS) && clipRect) { // DT_END_ELLIPSIS
         int tw, th;
         hp_get_text_size(ctx, text, &tw, &th);
         if (tw > clipRect->w) {

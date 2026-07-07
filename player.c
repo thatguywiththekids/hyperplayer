@@ -2,7 +2,7 @@
 #include "ui.h"
 #include <libopenmpt/libopenmpt.h>
 #include <libopenmpt/libopenmpt_ext.h>
-#include <SDL3/SDL.h>
+#include "audio.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,7 +36,7 @@ struct PlayerState {
     openmpt_module *mod_ui;
     openmpt_module_ext *mod_ui_ext;
     
-    SDL_AudioStream *stream;
+    HP_AudioStream stream;
     
     int sampleRate;
     int bufferFrames;
@@ -199,15 +199,12 @@ bool player_init(AppState *app) {
     
     p->audioHistory = (float *)calloc(AUDIO_HISTORY_SIZE, sizeof(float));
     
-    SDL_AudioSpec spec = { SDL_AUDIO_S16LE, 2, PLAYER_SAMPLE_RATE };
-    p->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+    p->stream = hp_audio_open(PLAYER_SAMPLE_RATE, 2);
     if (!p->stream) {
         free(p->audioHistory);
         free(p);
         return false;
     }
-    
-    SDL_ResumeAudioDevice(SDL_GetAudioStreamDevice(p->stream));
     
     app->player = p;
     p->stopped = true;
@@ -223,7 +220,7 @@ void player_shutdown(AppState *app) {
     if (p->mod_ui_ext) openmpt_module_ext_destroy(p->mod_ui_ext);
     
     clear_sample_cache(p);
-    SDL_DestroyAudioStream(p->stream);
+    hp_audio_close(p->stream);
     free(p->audioHistory);
     free(p);
     app->player = NULL;
@@ -312,8 +309,8 @@ bool player_get_recent_mono_window(const AppState *app, float *outSamples, int c
     if (!app->player || !app->player->audioHistory) return false;
     PlayerState *p = app->player;
     
-    // Calculate latency offset (samples currently in the SDL audio stream)
-    int queuedBytes = SDL_GetAudioStreamQueued(p->stream);
+    // Calculate latency offset (samples currently in the audio stream)
+    int queuedBytes = hp_audio_get_queued_bytes(p->stream);
     int latencySamples = queuedBytes / 4; // 16-bit stereo = 4 bytes per frame
     
     // Ensure we don't look back further than our history
@@ -583,7 +580,7 @@ bool player_load_module(AppState *app, const wchar_t *absolutePath, const wchar_
     openmpt_module_set_repeat_count(p->mod_audio, p->loopEnabled ? -1 : 0);
     openmpt_module_set_repeat_count(p->mod_ui, p->loopEnabled ? -1 : 0);
     
-    SDL_ClearAudioStream(p->stream);
+    hp_audio_clear(p->stream);
     p->stopped = false;
     p->paused = false;
 
@@ -661,7 +658,7 @@ void player_stop(AppState *app) {
         app->player->paused = false;
         if (app->player->mod_audio) openmpt_module_set_position_seconds(app->player->mod_audio, 0.0);
         if (app->player->mod_ui) openmpt_module_set_position_seconds(app->player->mod_ui, 0.0);
-        SDL_ClearAudioStream(app->player->stream);
+        hp_audio_clear(app->player->stream);
         app->player->lastRow = -1;
         app->player->lastPattern = -1;
         app->player->totalSamplesRead = 0;
@@ -716,7 +713,7 @@ void player_update(AppState *app, double dt) {
      */
 
     // Calculate the "audible timestamp".
-    int queuedBytes = SDL_GetAudioStreamQueued(p->stream);
+    int queuedBytes = hp_audio_get_queued_bytes(p->stream);
     int64_t latencySamples = queuedBytes / 4; // 16-bit stereo assumed
     int64_t audibleSamplesTotal = (int64_t)p->totalSamplesRead - latencySamples;
     if (audibleSamplesTotal < 0) audibleSamplesTotal = 0;
@@ -773,14 +770,14 @@ void player_update(AppState *app, double dt) {
     }
     
     int targetBytes = (int)(p->sampleRate * 0.1 * 4); // 100ms
-    int currentBytes = SDL_GetAudioStreamQueued(p->stream);
+    int currentBytes = hp_audio_get_queued_bytes(p->stream);
     
     while (currentBytes < targetBytes) {
         int16_t buffer[PLAYER_BUFFER_FRAMES * 2];
         size_t read = openmpt_module_read_interleaved_stereo(p->mod_audio, p->sampleRate, PLAYER_BUFFER_FRAMES, buffer);
         
         if (read > 0) {
-            SDL_PutAudioStreamData(p->stream, buffer, (int)(read * 4));
+            hp_audio_write(p->stream, buffer, (int)(read * 4));
             currentBytes += (int)(read * 4);
             p->totalSamplesRead += read;
             

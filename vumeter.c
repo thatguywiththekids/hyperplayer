@@ -1,7 +1,6 @@
 #include "vumeter.h"
 #include "player.h"
 #include "renderer.h"
-#include "portability.h"
 #include <stdbool.h>
 #include <stdlib.h>
 #include <wchar.h>
@@ -40,91 +39,22 @@ static VuMeterConfig g_config = {
     84
 };
 
-static void build_ini_path(wchar_t *path, size_t pathCount)
+static void load_vumeter_config(const AppState *app)
 {
-    DWORD len;
-    if (!path || pathCount == 0) return;
-
-    len = GetModuleFileNameW(NULL, path, (DWORD)pathCount);
-    if (len == 0 || len >= pathCount) {
-        wcsncpy(path, L"hyperplayer.ini", pathCount);
-        path[pathCount - 1] = L'\0';
-        return;
-    }
-
-    while (len > 0) {
-        wchar_t c = path[len - 1];
-        if (c == L'\\' || c == L'/') break;
-        --len;
-    }
-
-    if (len == 0) {
-        wcsncpy(path, L"hyperplayer.ini", pathCount);
-        path[pathCount - 1] = L'\0';
-        return;
-    }
-
-    path[len] = L'\0';
-    wcscat(path, L"hyperplayer.ini");
-}
-
-static HP_Color parse_hex_color(const wchar_t *text, HP_Color fallback)
-{
-    wchar_t *endPtr;
-    unsigned long value;
-    if (!text || wcslen(text) != 6) return fallback;
-
-    value = wcstoul(text, &endPtr, 16);
-    if (endPtr == text || *endPtr != L'\0' || value > 0xFFFFFFUL) return fallback;
-
-    return hp_color_rgb((uint8_t)((value >> 16) & 0xFF), (uint8_t)((value >> 8) & 0xFF), (uint8_t)(value & 0xFF));
-}
-
-static uint8_t parse_alpha_value(const wchar_t *text, uint8_t fallback)
-{
-    wchar_t *endPtr;
-    unsigned long value;
-
-    if (!text || *text == L'\0') {
-        return fallback;
-    }
-
-    value = wcstoul(text, &endPtr, 10);
-    if (endPtr == text || *endPtr != L'\0' || value > 255UL) {
-        return fallback;
-    }
-
-    return (uint8_t)value;
-}
-
-static void load_vumeter_config(void)
-{
-    wchar_t iniPath[MAX_PATH];
-    wchar_t value[64];
-
-    build_ini_path(iniPath, sizeof(iniPath) / sizeof(iniPath[0]));
-
-    GetPrivateProfileStringW(L"VUMETER", L"VUCOLOR1", L"", value, sizeof(value) / sizeof(value[0]), iniPath);
-    if (value[0] != L'\0') g_config.color1 = parse_hex_color(value, g_config.color1);
-
-    GetPrivateProfileStringW(L"VUMETER", L"VUCOLOR2", L"", value, sizeof(value) / sizeof(value[0]), iniPath);
-    if (value[0] != L'\0') g_config.color2 = parse_hex_color(value, g_config.color2);
-
-    GetPrivateProfileStringW(L"VUMETER", L"VUCOLOR3", L"", value, sizeof(value) / sizeof(value[0]), iniPath);
-    if (value[0] != L'\0') g_config.color3 = parse_hex_color(value, g_config.color3);
-
-    GetPrivateProfileStringW(L"VUMETER", L"VUTRANSPARENCY", L"", value, sizeof(value) / sizeof(value[0]), iniPath);
-    if (value[0] != L'\0') g_config.alpha = parse_alpha_value(value, g_config.alpha);
-
+    if (g_config.loaded) return;
+    g_config.color1 = app_ini_get_color(app, L"VUMETER", L"VUCOLOR1", g_config.color1);
+    g_config.color2 = app_ini_get_color(app, L"VUMETER", L"VUCOLOR2", g_config.color2);
+    g_config.color3 = app_ini_get_color(app, L"VUMETER", L"VUCOLOR3", g_config.color3);
+    g_config.alpha = (uint8_t)app_ini_get_int(app, L"VUMETER", L"VUTRANSPARENCY", g_config.alpha);
     g_config.loaded = true;
 }
 
-static HP_Color get_box_color(int index, int total)
+static HP_Color get_box_color(const AppState *app, int index, int total)
 {
     float t = (float)index / (float)(total - 1);
     HP_Color c;
 
-    if (!g_config.loaded) load_vumeter_config();
+    if (!g_config.loaded) load_vumeter_config(app);
 
     if (t < 0.70f) c = g_config.color1;
     else if (t < 0.90f) c = g_config.color2;
@@ -155,17 +85,16 @@ void vumeter_draw(AppState *app, HP_DrawContext *ctx)
 {
     int lit;
     int total;
-    (void)app;
 
     if (!ctx) return;
-    if (!g_config.loaded) load_vumeter_config();
+    if (!g_config.loaded) load_vumeter_config(app);
 
     total = (int)(sizeof(g_boxes) / sizeof(g_boxes[0]));
     lit = (int)(g_level * (float)total + 0.5f);
 
     for (int i = 0; i < lit && i < total; ++i) {
         const BoxRect *box = &g_boxes[i];
-        HP_Color color = get_box_color(i, total);
+        HP_Color color = get_box_color(app, i, total);
         HP_Rect r = { box->x, box->y, box->w, box->h };
         hp_draw_set_color(ctx, color);
         hp_draw_fill_rect(ctx, &r);

@@ -14,6 +14,7 @@ pkg_check_modules(OPENMPT REQUIRED libopenmpt>=0.6.0)
 set(COMMON_SOURCES
     action_buttons.c
     app.c
+    audio_sdl3.c
     directory_listing.c
     mousecursor.c
     pattern_view.c
