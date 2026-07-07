@@ -69,6 +69,7 @@ int main(int argc, char *argv[]) {
 
     // Assets need to be loaded after renderer is ready
     ui_load_assets(&app, &ctx);
+    mousecursor_apply(app.hwnd);
 
     SDL_Event event;
     uint64_t lastTime = SDL_GetTicksNS();
@@ -181,6 +182,7 @@ int main(int argc, char *argv[]) {
     }
 
     app_shutdown(&app);
+    mousecursor_unload();
     SDL_DestroyRenderer(g_renderer);
     SDL_DestroyWindow(g_window);
     TTF_Quit();
