@@ -310,8 +310,7 @@ bool player_get_recent_mono_window(const AppState *app, float *outSamples, int c
     PlayerState *p = app->player;
     
     // Calculate latency offset (samples currently in the audio stream)
-    int queuedBytes = hp_audio_get_queued_bytes(p->stream);
-    int latencySamples = queuedBytes / 4; // 16-bit stereo = 4 bytes per frame
+    int latencySamples = hp_audio_get_queued_frames(p->stream);
     
     // Ensure we don't look back further than our history
     if (latencySamples > AUDIO_HISTORY_SIZE - count) latencySamples = AUDIO_HISTORY_SIZE - count;
@@ -713,8 +712,7 @@ void player_update(AppState *app, double dt) {
      */
 
     // Calculate the "audible timestamp".
-    int queuedBytes = hp_audio_get_queued_bytes(p->stream);
-    int64_t latencySamples = queuedBytes / 4; // 16-bit stereo assumed
+    int64_t latencySamples = hp_audio_get_queued_frames(p->stream);
     int64_t audibleSamplesTotal = (int64_t)p->totalSamplesRead - latencySamples;
     if (audibleSamplesTotal < 0) audibleSamplesTotal = 0;
 
@@ -769,16 +767,16 @@ void player_update(AppState *app, double dt) {
         }
     }
     
-    int targetBytes = (int)(p->sampleRate * 0.1 * 4); // 100ms
-    int currentBytes = hp_audio_get_queued_bytes(p->stream);
+    int targetFrames = (int)(p->sampleRate * 0.1); // 100ms
+    int currentFrames = hp_audio_get_queued_frames(p->stream);
     
-    while (currentBytes < targetBytes) {
+    while (currentFrames < targetFrames) {
         int16_t buffer[PLAYER_BUFFER_FRAMES * 2];
         size_t read = openmpt_module_read_interleaved_stereo(p->mod_audio, p->sampleRate, PLAYER_BUFFER_FRAMES, buffer);
         
         if (read > 0) {
-            hp_audio_write(p->stream, buffer, (int)(read * 4));
-            currentBytes += (int)(read * 4);
+            hp_audio_write(p->stream, buffer, (int)read);
+            currentFrames += (int)read;
             p->totalSamplesRead += read;
             
             float accum = 0.0f;

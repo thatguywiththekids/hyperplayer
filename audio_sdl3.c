@@ -42,18 +42,20 @@ void hp_audio_clear(HP_AudioStream stream)
     }
 }
 
-int hp_audio_get_queued_bytes(HP_AudioStream stream)
+int hp_audio_get_queued_frames(HP_AudioStream stream)
 {
     if (stream && stream->sdlStream) {
-        return SDL_GetAudioStreamQueued(stream->sdlStream);
+        // 16-bit stereo = 2 channels * 2 bytes = 4 bytes per frame
+        return SDL_GetAudioStreamQueued(stream->sdlStream) / 4;
     }
     return 0;
 }
 
-bool hp_audio_write(HP_AudioStream stream, const void *data, int size)
+bool hp_audio_write(HP_AudioStream stream, const void *data, int frames)
 {
     if (stream && stream->sdlStream) {
-        return SDL_PutAudioStreamData(stream->sdlStream, data, size);
+        // 16-bit stereo = 2 channels * 2 bytes = 4 bytes per frame
+        return SDL_PutAudioStreamData(stream->sdlStream, data, frames * 4);
     }
     return false;
 }
