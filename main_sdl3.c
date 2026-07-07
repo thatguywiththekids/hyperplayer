@@ -1,17 +1,5 @@
 #include "app.h"
-#include "ui.h"
-#include "player.h"
-#include "directory_listing.h"
-#include "action_buttons.h"
-#include "sample_list.h"
-#include "sample_list_usage_trigger.h"
-#include "sample_display.h"
-#include "spectrumanalyzer.h"
-#include "vumeter.h"
-#include "quadrascope.h"
-#include "tunnelvisualizer.h"
-#include "mousecursor.h"
-#include "urls.h"
+#include "hp_app.h"
 #include "renderer.h"
 
 #include <SDL3/SDL.h>
@@ -27,7 +15,32 @@ static SDL_Window *g_window = NULL;
 static SDL_Renderer *g_renderer = NULL;
 static bool g_running = true;
 
-int main(int argc, char *argv[]) {
+static HP_KeyCode map_sdl_key(SDL_Keycode sym)
+{
+    switch (sym) {
+        case SDLK_ESCAPE: return HP_KEY_ESCAPE;
+        case SDLK_SPACE:  return HP_KEY_SPACE;
+        case SDLK_LEFT:   return HP_KEY_LEFT;
+        case SDLK_RIGHT:  return HP_KEY_RIGHT;
+        case SDLK_UP:     return HP_KEY_UP;
+        case SDLK_DOWN:   return HP_KEY_DOWN;
+        case SDLK_S:      return HP_KEY_S;
+        case SDLK_R:      return HP_KEY_R;
+        default:          return HP_KEY_UNKNOWN;
+    }
+}
+
+static uint32_t map_sdl_modifiers(SDL_Keymod mod)
+{
+    uint32_t modifiers = HP_KEYMOD_NONE;
+    if (mod & SDL_KMOD_CTRL)  modifiers |= HP_KEYMOD_CTRL;
+    if (mod & SDL_KMOD_ALT)   modifiers |= HP_KEYMOD_ALT;
+    if (mod & SDL_KMOD_SHIFT) modifiers |= HP_KEYMOD_SHIFT;
+    return modifiers;
+}
+
+int main(int argc, char *argv[])
+{
     setlocale(LC_ALL, "");
     setlocale(LC_NUMERIC, "C");
     AppState app = {0};
@@ -56,20 +69,15 @@ int main(int argc, char *argv[]) {
 
     SDL_SetRenderLogicalPresentation(g_renderer, 1920, 1080, SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
-    // App Initialization
-    if (!app_init(&app)) {
-        fprintf(stderr, "app_init failed\n");
-        return 1;
-    }
-
     app.hwnd = (HWND)g_window;
 
     HP_DrawContext ctx;
     hp_renderer_init_context(&ctx, g_renderer);
 
-    // Assets need to be loaded after renderer is ready
-    ui_load_assets(&app, &ctx);
-    mousecursor_apply(app.hwnd);
+    if (!hp_app_init(&app, &ctx)) {
+        fprintf(stderr, "hp_app_init failed\n");
+        return 1;
+    }
 
     SDL_Event event;
     uint64_t lastTime = SDL_GetTicksNS();
@@ -91,87 +99,42 @@ int main(int argc, char *argv[]) {
                     g_running = false;
                     break;
                 case SDL_EVENT_MOUSE_MOTION:
-                    app.mouseX = (int)event.motion.x;
-                    app.mouseY = (int)event.motion.y;
+                    hp_app_on_mouse_motion(&app, (int)event.motion.x, (int)event.motion.y);
                     break;
                 case SDL_EVENT_MOUSE_BUTTON_DOWN:
-                    if (event.button.button == SDL_BUTTON_LEFT) {
-                        if (!action_buttons_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
-                            if (!urls_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
-                                if (!sample_list_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
-                                    if (!directory_listing_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
-                                        if (!tunnelvisualizer_mouse_down(&app, (int)event.button.x, (int)event.button.y)) {
-                                            // Other interactions...
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    {
+                        HP_MouseButton btn = HP_MOUSE_BUTTON_LEFT;
+                        if (event.button.button == SDL_BUTTON_LEFT) btn = HP_MOUSE_BUTTON_LEFT;
+                        else if (event.button.button == SDL_BUTTON_MIDDLE) btn = HP_MOUSE_BUTTON_MIDDLE;
+                        else if (event.button.button == SDL_BUTTON_RIGHT) btn = HP_MOUSE_BUTTON_RIGHT;
+                        hp_app_on_mouse_down(&app, btn, (int)event.button.x, (int)event.button.y);
                     }
                     break;
                 case SDL_EVENT_MOUSE_WHEEL:
-                    if (app.showFileBrowser) {
-                        directory_listing_mouse_wheel(&app, (int)event.wheel.y * 120);
-                    }
+                    hp_app_on_mouse_wheel(&app, event.wheel.x, event.wheel.y);
                     break;
                 case SDL_EVENT_KEY_DOWN:
-                    switch (event.key.key) {
-                        case SDLK_ESCAPE:
-                            g_running = false;
-                            break;
-                        case SDLK_SPACE:
-                            if (player_is_paused(&app) || player_is_stopped(&app)) {
-                                player_play(&app);
-                                app.showFileBrowser = false;
-                            } else {
-                                player_pause(&app);
-                            }
-                            break;
-                        case SDLK_LEFT:
-                            player_jump_to_order(&app, -1);
-                            break;
-                        case SDLK_RIGHT:
-                            player_jump_to_order(&app, 1);
-                            break;
-                        case SDLK_UP:
-                            if (directory_listing_move_to_neighbor(&app, -1)) {
-                                player_play(&app);
-                                app.showFileBrowser = false;
-                            }
-                            break;
-                        case SDLK_DOWN:
-                            if (directory_listing_move_to_neighbor(&app, 1)) {
-                                player_play(&app);
-                                app.showFileBrowser = false;
-                            }
-                            break;
-                        case SDLK_S:
-                            player_stop(&app);
-                            break;
-                        case SDLK_R:
-                            if (event.key.mod & SDL_KMOD_CTRL) {
-                                player_restart_current_order(&app);
-                                player_play(&app);
-                                app.showFileBrowser = false;
-                            }
-                            break;
+                    {
+                        bool quit = false;
+                        hp_app_on_key_down(
+                            &app, 
+                            map_sdl_key(event.key.key), 
+                            map_sdl_modifiers(event.key.mod), 
+                            &quit
+                        );
+                        if (quit) g_running = false;
                     }
                     break;
             }
         }
 
-        player_update(&app, dt);
-        tunnelvisualizer_update(&app, dt);
-        spectrumanalyzer_update(&app, dt);
-        vumeter_update(&app, dt);
-        sample_display_update(&app, dt);
-        sample_list_usage_trigger_update(&app, dt);
+        hp_app_update(&app, dt);
 
         SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
         SDL_RenderClear(g_renderer);
 
         HP_Rect clientRect = { 0, 0, 1920, 1080 };
-        ui_draw(&app, &ctx, &clientRect);
+        hp_app_draw(&app, &ctx, &clientRect);
 
         SDL_RenderPresent(g_renderer);
 
@@ -181,8 +144,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    app_shutdown(&app);
-    mousecursor_unload();
+    hp_app_shutdown(&app);
     SDL_DestroyRenderer(g_renderer);
     SDL_DestroyWindow(g_window);
     TTF_Quit();

@@ -16,6 +16,7 @@ set(COMMON_SOURCES
     app.c
     audio_sdl3.c
     directory_listing.c
+    hp_app.c
     mousecursor.c
     pattern_view.c
     player.c
