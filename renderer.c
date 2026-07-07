@@ -1,5 +1,8 @@
 #include "renderer.h"
 #include "portability.h"
+#include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
+#include <SDL3_image/SDL_image.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -109,7 +112,7 @@ void* ShellExecuteW(HWND hwnd, const wchar_t* lpOperation, const wchar_t* lpFile
 }
 #endif
 
-void hp_renderer_init_context(HP_DrawContext *ctx, SDL_Renderer *renderer) {
+void hp_renderer_init_context(HP_DrawContext *ctx, void *renderer) {
     memset(ctx, 0, sizeof(HP_DrawContext));
     ctx->renderer = renderer;
     ctx->textColor = (HP_Color){255, 255, 255, 255};
@@ -172,6 +175,51 @@ void hp_draw_pixel(HP_DrawContext *ctx, int x, int y, HP_Color color) {
     SDL_SetRenderDrawColor(ctx->renderer, or, og, ob, oa);
 }
 
+void hp_draw_points(HP_DrawContext *ctx, const HP_Point *points, int count) {
+    if (count <= 0) return;
+    SDL_FPoint *fpoints = malloc(sizeof(SDL_FPoint) * count);
+    if (!fpoints) return;
+    for (int i = 0; i < count; ++i) {
+        fpoints[i].x = (float)points[i].x;
+        fpoints[i].y = (float)points[i].y;
+    }
+    SDL_RenderPoints(ctx->renderer, fpoints, count);
+    free(fpoints);
+}
+
+void hp_draw_fill_rects(HP_DrawContext *ctx, const HP_Rect *rects, int count) {
+    if (count <= 0) return;
+    SDL_FRect *frects = malloc(sizeof(SDL_FRect) * count);
+    if (!frects) return;
+    for (int i = 0; i < count; ++i) {
+        frects[i].x = (float)rects[i].x;
+        frects[i].y = (float)rects[i].y;
+        frects[i].w = (float)rects[i].w;
+        frects[i].h = (float)rects[i].h;
+    }
+    SDL_RenderFillRects(ctx->renderer, frects, count);
+    free(frects);
+}
+
+HP_Font hp_load_font(const wchar_t *path, int pixelHeight) {
+    char mbsPath[4096];
+    wcstombs(mbsPath, path, sizeof(mbsPath));
+    TTF_Font *font = TTF_OpenFont(mbsPath, (float)pixelHeight);
+    if (!font) {
+        font = TTF_OpenFont("protracker.ttf", (float)pixelHeight);
+    }
+    if (!font) {
+        font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", (float)pixelHeight);
+    }
+    return (HP_Font)font;
+}
+
+void hp_free_font(HP_Font font) {
+    if (font) {
+        TTF_CloseFont((TTF_Font*)font);
+    }
+}
+
 void hp_draw_set_font(HP_DrawContext *ctx, HP_Font font) {
     ctx->currentFont = font;
 }
@@ -186,7 +234,7 @@ void hp_draw_text(HP_DrawContext *ctx, int x, int y, const wchar_t *text) {
     wcstombs(mbs, text, sizeof(mbs));
     mbs[4095] = '\0';
     SDL_Color color = {ctx->textColor.r, ctx->textColor.g, ctx->textColor.b, ctx->textColor.a};
-    SDL_Surface *surface = TTF_RenderText_Blended(ctx->currentFont, mbs, 0, color);
+    SDL_Surface *surface = TTF_RenderText_Blended((TTF_Font*)ctx->currentFont, mbs, 0, color);
     if (!surface) return;
     SDL_Texture *texture = SDL_CreateTextureFromSurface(ctx->renderer, surface);
     if (texture) {
@@ -202,7 +250,7 @@ void hp_get_text_size(HP_DrawContext *ctx, const wchar_t *text, int *w, int *h) 
     char mbs[4096];
     wcstombs(mbs, text, sizeof(mbs));
     mbs[4095] = '\0';
-    TTF_GetStringSize(ctx->currentFont, mbs, 0, w, h);
+    TTF_GetStringSize((TTF_Font*)ctx->currentFont, mbs, 0, w, h);
 }
 
 void hp_draw_texture(HP_DrawContext *ctx, HP_Texture *tex, const HP_Rect *src, const HP_Rect *dst, uint8_t alpha) {
@@ -211,4 +259,71 @@ void hp_draw_texture(HP_DrawContext *ctx, HP_Texture *tex, const HP_Rect *src, c
     SDL_FRect d = dst ? (SDL_FRect){(float)dst->x, (float)dst->y, (float)dst->w, (float)dst->h} : (SDL_FRect){0, 0, (float)tex->width, (float)tex->height};
     SDL_SetTextureAlphaMod(tex->texture, alpha);
     SDL_RenderTexture(ctx->renderer, tex->texture, &s, &d);
+}
+
+bool hp_create_streaming_texture(HP_DrawContext *ctx, HP_Texture *outTex, int width, int height) {
+    if (!ctx || !outTex) return false;
+    SDL_Texture *tex = SDL_CreateTexture(ctx->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, width, height);
+    if (!tex) {
+        outTex->texture = NULL;
+        outTex->width = 0;
+        outTex->height = 0;
+        return false;
+    }
+    outTex->texture = tex;
+    outTex->width = width;
+    outTex->height = height;
+    return true;
+}
+
+void hp_destroy_texture(HP_Texture *tex) {
+    if (tex && tex->texture) {
+        SDL_DestroyTexture((SDL_Texture*)tex->texture);
+        tex->texture = NULL;
+        tex->width = 0;
+        tex->height = 0;
+    }
+}
+
+void hp_update_texture(HP_Texture *tex, const void *pixels, int pitch) {
+    if (tex && tex->texture) {
+        SDL_UpdateTexture((SDL_Texture*)tex->texture, NULL, pixels, pitch);
+    }
+}
+
+void hp_set_texture_blend_mode(HP_Texture *tex, HP_BlendMode mode) {
+    if (tex && tex->texture) {
+        SDL_BlendMode sdlMode;
+        switch (mode) {
+            case HP_BLEND_ADDITIVE: sdlMode = SDL_BLENDMODE_ADD; break;
+            case HP_BLEND_NONE:     sdlMode = SDL_BLENDMODE_NONE; break;
+            default:                sdlMode = SDL_BLENDMODE_BLEND; break;
+        }
+        SDL_SetTextureBlendMode((SDL_Texture*)tex->texture, sdlMode);
+    }
+}
+
+bool hp_load_texture_file(HP_DrawContext *ctx, const wchar_t *path, HP_Texture *outTex) {
+    if (!ctx || !path || !outTex) return false;
+    char mbsPath[4096];
+    wcstombs(mbsPath, path, sizeof(mbsPath));
+    SDL_Surface *surface = IMG_Load(mbsPath);
+    if (!surface) {
+        outTex->texture = NULL;
+        outTex->width = 0;
+        outTex->height = 0;
+        return false;
+    }
+    SDL_Texture *tex = SDL_CreateTextureFromSurface((SDL_Renderer*)ctx->renderer, surface);
+    outTex->width = surface->w;
+    outTex->height = surface->h;
+    SDL_DestroySurface(surface);
+    if (!tex) {
+        outTex->texture = NULL;
+        outTex->width = 0;
+        outTex->height = 0;
+        return false;
+    }
+    outTex->texture = tex;
+    return true;
 }

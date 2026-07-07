@@ -12,12 +12,6 @@ typedef struct AppConfig {
     int modOctaveOffset;
 } AppConfig;
 
-typedef struct ImageRGBA {
-    UINT width;
-    UINT height;
-    unsigned char *pixels;
-    void *gpuTexture; // Cached SDL_Texture*
-} ImageRGBA;
 
 typedef struct FontSet {
     HP_Font pattern;
@@ -83,7 +77,7 @@ typedef struct AppState {
 
     HANDLE privateFontHandle;
 
-    ImageRGBA background;
+    HP_Texture background;
     FontSet fonts;
     DirectoryListing directory;
     PlayerState *player;

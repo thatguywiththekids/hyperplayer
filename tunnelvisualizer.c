@@ -68,7 +68,7 @@ typedef struct RadialState {
 } RadialState;
 
 typedef struct BloomSurface {
-    SDL_Texture *texture;
+    HP_Texture texture;
     unsigned int *pixels;
     unsigned int *src;
     unsigned int *tmp;
@@ -179,17 +179,16 @@ static HP_Color hsv_to_rgb(float h, float s, float v) {
 }
 
 static void bloom_release(void) {
-    if (g_bloom.texture) SDL_DestroyTexture(g_bloom.texture);
+    hp_destroy_texture(&g_bloom.texture);
     if (g_bloom.src) free(g_bloom.src); if (g_bloom.tmp) free(g_bloom.tmp);
     if (g_bloom.pixels) free(g_bloom.pixels);
     memset(&g_bloom, 0, sizeof(g_bloom));
 }
 
 static bool bloom_ensure(HP_DrawContext *ctx, int width, int height) {
-    if (g_bloom.texture && g_bloom.width == width && g_bloom.height == height) return true;
+    if (g_bloom.texture.texture && g_bloom.width == width && g_bloom.height == height) return true;
     bloom_release();
-    g_bloom.texture = SDL_CreateTexture(ctx->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, width, height);
-    if (!g_bloom.texture) return false;
+    if (!hp_create_streaming_texture(ctx, &g_bloom.texture, width, height)) return false;
     g_bloom.src = malloc(width * height * 4); g_bloom.tmp = malloc(width * height * 4);
     g_bloom.pixels = malloc(width * height * 4);
     if (!g_bloom.src || !g_bloom.tmp || !g_bloom.pixels) { bloom_release(); return false; }
@@ -427,7 +426,7 @@ void tunnelvisualizer_draw(AppState *app, HP_DrawContext *ctx) {
     hp_draw_fill_rect(ctx, &box);
 
     // Batched Starfield
-    static SDL_FPoint pts[10000]; static SDL_FRect r2[10000], r3[10000];
+    static HP_Point pts[10000]; static HP_Rect r2[10000], r3[10000];
     int n1=0, n2=0, n3=0;
     for (int i=0; i<g_starfield.count; ++i) {
         float f = g_starfield.fov / g_starfield.z[i];
@@ -436,14 +435,14 @@ void tunnelvisualizer_draw(AppState *app, HP_DrawContext *ctx) {
         float b = clampf_local((1.0f - g_starfield.z[i]/g_starfield.width)*g_starfield.brightness[i]*g_visualizer.starfieldBrightness, 0, 1);
         if (b < 0.1f) continue;
         float px = TV_BOX_X + sx, py = TV_BOX_Y + sy;
-        if (b > 0.78f) { r3[n3++] = (SDL_FRect){px, py, 3, 3}; }
-        else if (b > 0.40f) { r2[n2++] = (SDL_FRect){px, py, 2, 2}; }
-        else { pts[n1++] = (SDL_FPoint){px, py}; }
+        if (b > 0.78f) { r3[n3++] = (HP_Rect){(int)px, (int)py, 3, 3}; }
+        else if (b > 0.40f) { r2[n2++] = (HP_Rect){(int)px, (int)py, 2, 2}; }
+        else { pts[n1++] = (HP_Point){(int)px, (int)py}; }
     }
     hp_draw_set_color(ctx, g_visualizer.starColor);
-    if (n1>0) SDL_RenderPoints(ctx->renderer, pts, n1);
-    if (n2>0) SDL_RenderFillRects(ctx->renderer, r2, n2);
-    if (n3>0) SDL_RenderFillRects(ctx->renderer, r3, n3);
+    if (n1>0) hp_draw_points(ctx, pts, n1);
+    if (n2>0) hp_draw_fill_rects(ctx, r2, n2);
+    if (n3>0) hp_draw_fill_rects(ctx, r3, n3);
 
     int cx = TV_BOX_W / 2;
     int cy = TV_BOX_H / 2;
@@ -487,11 +486,9 @@ void tunnelvisualizer_draw(AppState *app, HP_DrawContext *ctx) {
         int br = clampf_local((5.0f + g_visualizer.globalGlowStrength * 5.0f) * bs, 1, 10);
         blur_horizontal(g_bloom.src, g_bloom.tmp, g_bloom.width, g_bloom.height, br);
         blur_vertical_to_premult(g_bloom.tmp, (unsigned int*)g_bloom.pixels, g_bloom.width, g_bloom.height, br, 1.0f);
-        SDL_UpdateTexture(g_bloom.texture, NULL, g_bloom.pixels, g_bloom.width * 4);
-        
-        SDL_SetTextureBlendMode(g_bloom.texture, SDL_BLENDMODE_ADD);
-        HP_Texture hpt = {g_bloom.texture, g_bloom.width, g_bloom.height};
-        hp_draw_texture(ctx, &hpt, NULL, &box, 255);
+        hp_update_texture(&g_bloom.texture, g_bloom.pixels, g_bloom.width * 4);
+        hp_set_texture_blend_mode(&g_bloom.texture, HP_BLEND_ADDITIVE);
+        hp_draw_texture(ctx, &g_bloom.texture, NULL, &box, 255);
     }
 
     hp_draw_set_blend_mode(ctx, HP_BLEND_ALPHA);

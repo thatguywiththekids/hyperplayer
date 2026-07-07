@@ -18,8 +18,6 @@
 #include "sample_list.h"
 #include "renderer.h"
 
-#include <SDL3/SDL.h>
-#include <SDL3_image/SDL_image.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +32,7 @@ static const wchar_t *FONT_FACE = L"protracker.ttf";
 static void ui_delete_font(HP_Font *font)
 {
     if (font && *font) {
-        TTF_CloseFont(*font);
+        hp_free_font(*font);
         *font = NULL;
     }
 }
@@ -42,58 +40,10 @@ static void ui_delete_font(HP_Font *font)
 static HP_Font ui_make_font(const wchar_t *path, int pixelHeight, int weight)
 {
     (void)weight;
-    // We use the path directly now for SDL_ttf
-    char mbsPath[MAX_PATH*4];
-    wcstombs(mbsPath, path, sizeof(mbsPath));
-    HP_Font font = TTF_OpenFont("protracker.ttf", (float)pixelHeight);
-    if (!font) {
-        font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", (float)pixelHeight);
-    }
-    return font;
+    return hp_load_font(path, pixelHeight);
 }
 
-static bool ui_load_image_portable(void *renderer, const wchar_t *path, ImageRGBA *outImage)
-{
-    char mbsPath[MAX_PATH*4];
-    wcstombs(mbsPath, path, sizeof(mbsPath));
-    
-    SDL_Surface *surface = IMG_Load(mbsPath);
-    if (!surface) return false;
-    
-    SDL_Surface *converted = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_BGRA32);
-    SDL_DestroySurface(surface);
-    if (!converted) return false;
-    
-    outImage->width = converted->w;
-    outImage->height = converted->h;
-    outImage->pixels = (unsigned char *)malloc(converted->w * converted->h * 4);
-    if (outImage->pixels) {
-        memcpy(outImage->pixels, converted->pixels, converted->w * converted->h * 4);
-        outImage->gpuTexture = SDL_CreateTextureFromSurface((SDL_Renderer *)renderer, converted);
-    }
-    
-    SDL_DestroySurface(converted);
-    return outImage->pixels != NULL;
-}
-
-static void ui_free_image(ImageRGBA *image)
-{
-    if (!image) return;
-    if (image->pixels) free(image->pixels);
-    if (image->gpuTexture) SDL_DestroyTexture((SDL_Texture *)image->gpuTexture);
-    image->pixels = NULL;
-    image->gpuTexture = NULL;
-    image->width = 0;
-    image->height = 0;
-}
-
-static void ui_draw_image(HP_DrawContext *ctx, const HP_Rect *clientRect, const ImageRGBA *image)
-{
-    if (!ctx || !clientRect || !image || !image->gpuTexture) return;
-
-    HP_Texture tex = {(SDL_Texture *)image->gpuTexture, (int)image->width, (int)image->height};
-    hp_draw_texture(ctx, &tex, NULL, clientRect, 255);
-}
+// (Image loading helper functions have been moved to the renderer backend)
 
 void ui_draw_shadowed_text(
     HP_DrawContext *ctx,
@@ -173,7 +123,7 @@ static void ui_draw_fallback_shell(AppState *app, HP_DrawContext *ctx, const HP_
     ui_draw_shadowed_text(ctx, app->fonts.title, L"HYPERPLAYER", 1375, 12, COLOR_WHITE, COLOR_SHADOW, 3, 3, NULL, 0);
 }
 
-bool ui_load_assets(AppState *app, void *renderer)
+bool ui_load_assets(AppState *app, HP_DrawContext *ctx)
 {
     wchar_t cursorPath[MAX_PATH];
     app->fonts.pattern = ui_make_font(L"protracker.ttf", 18, 0);
@@ -185,8 +135,8 @@ bool ui_load_assets(AppState *app, void *renderer)
     app->fonts.waveform = ui_make_font(L"protracker.ttf", 32, 0);
     app->fonts.title = ui_make_font(L"protracker.ttf", 42, 0);
     
-    ui_load_image_portable(renderer, app->backgroundPath, &app->background);
-    app->backgroundLoaded = (app->background.pixels != NULL);
+    hp_load_texture_file(ctx, app->backgroundPath, &app->background);
+    app->backgroundLoaded = (app->background.texture != NULL);
 
     app_join_path(cursorPath, MAX_PATH, app->exeDir, L"PT-mousecursor.png");
     mousecursor_load(cursorPath, 0, 0);
@@ -204,7 +154,7 @@ void ui_release_assets(AppState *app)
     ui_delete_font(&app->fonts.driveButtons);
     ui_delete_font(&app->fonts.waveform);
     ui_delete_font(&app->fonts.title);
-    ui_free_image(&app->background);
+    hp_destroy_texture(&app->background);
 }
 
 void ui_draw(AppState *app, HP_DrawContext *ctx, const HP_Rect *clientRect)
@@ -212,7 +162,7 @@ void ui_draw(AppState *app, HP_DrawContext *ctx, const HP_Rect *clientRect)
     if (!app || !ctx || !clientRect) return;
     
     if (app->backgroundLoaded) {
-        ui_draw_image(ctx, clientRect, &app->background);
+        hp_draw_texture(ctx, &app->background, NULL, clientRect, 255);
     } else {
         ui_draw_fallback_shell(app, ctx, clientRect);
     }

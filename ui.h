@@ -4,7 +4,7 @@
 #include "app.h"
 #include "renderer.h"
 
-bool ui_load_assets(AppState *app, void *renderer);
+bool ui_load_assets(AppState *app, HP_DrawContext *ctx);
 void ui_release_assets(AppState *app);
 void ui_draw(AppState *app, HP_DrawContext *ctx, const HP_Rect *clientRect);
 

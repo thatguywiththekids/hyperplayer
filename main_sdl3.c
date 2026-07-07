@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
     hp_renderer_init_context(&ctx, g_renderer);
 
     // Assets need to be loaded after renderer is ready
-    ui_load_assets(&app, g_renderer);
+    ui_load_assets(&app, &ctx);
 
     SDL_Event event;
     uint64_t lastTime = SDL_GetTicksNS();
