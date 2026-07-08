@@ -12,7 +12,7 @@ Thanks to Hyperunknown who released the original Hyperplayer source!
 
 Hyperplayer is focused on .MOD playback and browsing. The built-in file browser shows folders plus MOD files, lets you move through drives and directories, and loads a selected module directly into the player. Once a file is loaded, the browser is hidden so the visualizer panel takes over that area instead, but can be opened again by clicking on the "File Browser" text.
 The File Browser is listing all "*.mod" files aswell as files starting with "mod." as per the Amiga standard.
-During playback, Hyperplayer keeps separate OpenMPT instances for rendering audio and for UI/state tracking, so it can show song position, pattern/order/row data, sample usage, waveform previews, and visual meters while the song is playing. Audio is rendered at 44.1 kHz via SDL3's audio stream API.
+During playback, Hyperplayer keeps separate OpenMPT instances for rendering audio and for UI/state tracking, so it can show song position, pattern/order/row data, sample usage, waveform previews, and visual meters while the song is playing. Audio is rendered at 44.1 kHz, by default using SDL3's audio stream API (with an optional ALSA backend option on Linux).
 
 **Main features**
 
@@ -43,7 +43,7 @@ A large part of the visual behavior is controlled through hyperplayer.ini, inclu
 **Controls**
 
 **Space:** play / pause
-**Right Ctrl:** restart playback from the current pattern/order position and play
+**Ctrl + R:** restart playback from the current pattern/order position and play
 **S:** stop
 **Left Arrow:** previous pattern/order
 **Right Arrow:** next pattern/order
@@ -63,11 +63,12 @@ While playing, use the pattern view, sample list, waveform display, spectrum ana
 **What it uses**
 
 Hyperplayer is built with C11 and uses:
- * **SDL3:** For cross-platform window management, graphics rendering (via a Win32 GDI shim), and audio output.
+ * **SDL3:** For cross-platform window management, graphics rendering (via a custom drawing wrapper), and audio output (by default).
+ * **ALSA (Linux only):** An optional audio backend, primarily for demonstrating a custom/alternative audio backend implementation.
  * **libopenmpt:** For module decoding, pattern access, metadata, timing, and playback state.
  * **SDL3_image:** For loading PNG image assets.
  * **SDL3_ttf:** For high-quality text rendering.
- * **Win32 GDI Shim:** A custom portability layer that allows the original GDI-based rendering code to run on top of SDL3.
+ * **Win32 Portability Shim:** A custom portability layer that shims basic Win32 API functions (e.g., INI parsing, ticks, file path utilities) to allow the original Windows-based utility code to run on POSIX systems.
  * **Double-buffered drawing:** To ensure smooth UI updates and prevent flickering.
 
 **Configuration**
@@ -94,11 +95,15 @@ The project uses CMake for building across different platforms.
 - SDL3, SDL3_image, SDL3_ttf
 - libopenmpt 0.6.0+ (pkg-config)
 - A C11 compatible compiler (GCC, Clang, MSVC)
+- ALSA development libraries (optional, only needed for compiling with the ALSA backend on Linux)
 
 ### Build Commands
 ```bash
-# Create build directory
+# Create build directory (using default SDL3 audio backend)
 cmake -B build
+
+# Or create build directory using ALSA audio backend (Linux only)
+cmake -B build -DAUDIO_BACKEND=ALSA
 
 # Build the project
 cmake --build build
