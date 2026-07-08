@@ -214,8 +214,128 @@ HP_Font hp_load_font(const wchar_t *path, int pixelHeight) {
     return (HP_Font)font;
 }
 
+static wchar_t *hp_wcsdup(const wchar_t *src) {
+    if (!src) return NULL;
+    size_t len = wcslen(src);
+    wchar_t *dst = malloc((len + 1) * sizeof(wchar_t));
+    if (dst) {
+        memcpy(dst, src, (len + 1) * sizeof(wchar_t));
+    }
+    return dst;
+}
+
+#define TEXT_CACHE_SIZE 1024
+
+typedef struct {
+    HP_Font font;
+    wchar_t *text;
+    HP_Color color;
+    SDL_Texture *texture;
+    int width;
+    int height;
+    uint64_t last_used;
+} TextCacheEntry;
+
+static TextCacheEntry g_text_cache[TEXT_CACHE_SIZE] = {0};
+
+/*
+ * Hash function for the text cache key (font pointer, color, and string contents).
+ * Uses a modified DJB2 algorithm to mix key values.
+ */
+static uint32_t hash_text_key(HP_Font font, const wchar_t *text, HP_Color color) {
+    uint32_t hash = 5381;
+    uintptr_t fontVal = (uintptr_t)font;
+    hash = ((hash << 5) + hash) + (uint32_t)(fontVal & 0xFFFFFFFF);
+#if UINTPTR_MAX > 0xFFFFFFFF
+    hash = ((hash << 5) + hash) + (uint32_t)((fontVal >> 32) & 0xFFFFFFFF);
+#endif
+    hash = ((hash << 5) + hash) + color.r;
+    hash = ((hash << 5) + hash) + color.g;
+    hash = ((hash << 5) + hash) + color.b;
+    hash = ((hash << 5) + hash) + color.a;
+    while (*text) {
+        hash = ((hash << 5) + hash) + *text++;
+    }
+    return hash;
+}
+
+/*
+ * Looks up a text entry in the texture cache.
+ * Implements a 16-slot linear probe to handle hash collisions.
+ * If all 16 slots are full and no match is found, the Least Recently Used (LRU)
+ * entry in the neighborhood is evicted and replaced to bound VRAM usage.
+ */
+static TextCacheEntry *find_or_create_cache_entry(HP_DrawContext *ctx, HP_Font font, const wchar_t *text, HP_Color color) {
+    uint32_t hash = hash_text_key(font, text, color);
+    int best_slot = -1;
+    uint64_t oldest_time = 0xFFFFFFFFFFFFFFFFULL;
+    uint64_t now = SDL_GetTicks();
+    
+    for (int i = 0; i < 16; ++i) {
+        int idx = (hash + i) & (TEXT_CACHE_SIZE - 1);
+        TextCacheEntry *entry = &g_text_cache[idx];
+        if (entry->text == NULL) {
+            best_slot = idx;
+            break;
+        }
+        if (entry->font == font && 
+            entry->color.r == color.r && entry->color.g == color.g &&
+            entry->color.b == color.b && entry->color.a == color.a &&
+            wcscmp(entry->text, text) == 0) {
+            entry->last_used = now;
+            return entry;
+        }
+        if (entry->last_used < oldest_time) {
+            oldest_time = entry->last_used;
+            best_slot = idx;
+        }
+    }
+    
+    TextCacheEntry *entry = &g_text_cache[best_slot];
+    if (entry->text) {
+        free(entry->text);
+        if (entry->texture) {
+            SDL_DestroyTexture(entry->texture);
+        }
+        memset(entry, 0, sizeof(TextCacheEntry));
+    }
+    
+    char mbs[4096];
+    wcstombs(mbs, text, sizeof(mbs));
+    mbs[4095] = '\0';
+    SDL_Color sdlColor = {color.r, color.g, color.b, color.a};
+    SDL_Surface *surface = TTF_RenderText_Blended((TTF_Font*)font, mbs, 0, sdlColor);
+    if (!surface) return NULL;
+    
+    SDL_Texture *texture = SDL_CreateTextureFromSurface((SDL_Renderer*)ctx->renderer, surface);
+    if (!texture) {
+        SDL_DestroySurface(surface);
+        return NULL;
+    }
+    
+    entry->font = font;
+    entry->text = hp_wcsdup(text);
+    entry->color = color;
+    entry->texture = texture;
+    entry->width = (int)surface->w;
+    entry->height = (int)surface->h;
+    entry->last_used = now;
+    
+    SDL_DestroySurface(surface);
+    return entry;
+}
+
 void hp_free_font(HP_Font font) {
     if (font) {
+        for (int i = 0; i < TEXT_CACHE_SIZE; ++i) {
+            if (g_text_cache[i].font == font) {
+                free(g_text_cache[i].text);
+                if (g_text_cache[i].texture) {
+                    SDL_DestroyTexture(g_text_cache[i].texture);
+                }
+                memset(&g_text_cache[i], 0, sizeof(TextCacheEntry));
+            }
+        }
         TTF_CloseFont((TTF_Font*)font);
     }
 }
@@ -230,19 +350,11 @@ void hp_draw_set_text_color(HP_DrawContext *ctx, HP_Color color) {
 
 void hp_draw_text(HP_DrawContext *ctx, int x, int y, const wchar_t *text) {
     if (!ctx->currentFont || !text) return;
-    char mbs[4096];
-    wcstombs(mbs, text, sizeof(mbs));
-    mbs[4095] = '\0';
-    SDL_Color color = {ctx->textColor.r, ctx->textColor.g, ctx->textColor.b, ctx->textColor.a};
-    SDL_Surface *surface = TTF_RenderText_Blended((TTF_Font*)ctx->currentFont, mbs, 0, color);
-    if (!surface) return;
-    SDL_Texture *texture = SDL_CreateTextureFromSurface(ctx->renderer, surface);
-    if (texture) {
-        SDL_FRect dst = {(float)x, (float)y, (float)surface->w, (float)surface->h};
-        SDL_RenderTexture(ctx->renderer, texture, NULL, &dst);
-        SDL_DestroyTexture(texture);
+    TextCacheEntry *entry = find_or_create_cache_entry(ctx, ctx->currentFont, text, ctx->textColor);
+    if (entry && entry->texture) {
+        SDL_FRect dst = {(float)x, (float)y, (float)entry->width, (float)entry->height};
+        SDL_RenderTexture((SDL_Renderer*)ctx->renderer, entry->texture, NULL, &dst);
     }
-    SDL_DestroySurface(surface);
 }
 
 void hp_get_text_size(HP_DrawContext *ctx, const wchar_t *text, int *w, int *h) {
