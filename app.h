@@ -51,7 +51,6 @@ typedef struct AppState {
     wchar_t iniPath[MAX_PATH];
     wchar_t backgroundPath[MAX_PATH];
     wchar_t fontPath[MAX_PATH];
-    wchar_t runtimeDir[MAX_PATH];
     wchar_t statusText[2048];
 
     wchar_t currentSelectedFile[MAX_PATH];
@@ -69,13 +68,10 @@ typedef struct AppState {
 
     uint64_t lastUpdateTick;
 
-    bool comInitialized;
     bool backgroundLoaded;
     bool privateFontLoaded;
     bool runtimeDllsReady;
     bool showFileBrowser;
-
-    HANDLE privateFontHandle;
 
     HP_Texture background;
     FontSet fonts;
