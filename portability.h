@@ -28,7 +28,6 @@ typedef void* HCURSOR;
 // System shims for Linux/POSIX
 uint64_t GetTickCount64(void);
 DWORD GetModuleFileNameW(HANDLE hModule, wchar_t* lpFilename, DWORD nSize);
-UINT GetPrivateProfileIntW(const wchar_t* lpAppName, const wchar_t* lpKeyName, int nDefault, const wchar_t* lpFileName);
 DWORD GetPrivateProfileStringW(const wchar_t* lpAppName, const wchar_t* lpKeyName, const wchar_t* lpDefault, wchar_t* lpReturnedString, DWORD nSize, const wchar_t* lpFileName);
 
 #define SW_SHOWNORMAL 1

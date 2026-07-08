@@ -70,7 +70,6 @@ typedef struct AppState {
 
     bool backgroundLoaded;
     bool privateFontLoaded;
-    bool runtimeDllsReady;
     bool showFileBrowser;
 
     HP_Texture background;
@@ -92,8 +91,6 @@ HP_Color app_ini_get_color(const AppState *app, const wchar_t *section, const wc
 
 void app_join_path(wchar_t *dst, size_t dstCount, const wchar_t *dir, const wchar_t *name);
 
-bool app_prepare_runtime_dlls(AppState *app);
-void app_cleanup_runtime_dlls(AppState *app);
 bool app_ensure_default_ini_exists(void);
 
 #endif

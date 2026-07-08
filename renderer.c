@@ -89,14 +89,6 @@ DWORD GetPrivateProfileStringW(const wchar_t* lpAppName, const wchar_t* lpKeyNam
     return (DWORD)wcslen(lpReturnedString);
 }
 
-UINT GetPrivateProfileIntW(const wchar_t* lpAppName, const wchar_t* lpKeyName, int nDefault, const wchar_t* lpFileName) {
-    wchar_t buf[64];
-    if (GetPrivateProfileStringW(lpAppName, lpKeyName, NULL, buf, 64, lpFileName) > 0) {
-        return (UINT)wcstol(buf, NULL, 10);
-    }
-    return (UINT)nDefault;
-}
-
 void* ShellExecuteW(HWND hwnd, const wchar_t* lpOperation, const wchar_t* lpFile, const wchar_t* lpParameters, const wchar_t* lpDirectory, int nShowCmd) {
     (void)hwnd; (void)lpOperation; (void)lpParameters; (void)lpDirectory; (void)nShowCmd;
     if (!lpFile) return (void*)0;

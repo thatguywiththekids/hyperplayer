@@ -29,11 +29,6 @@ void mousecursor_unload(void)
     }
 }
 
-HCURSOR mousecursor_get(void)
-{
-    return (HCURSOR)g_cursor;
-}
-
 void mousecursor_apply(HWND hwnd)
 {
     if (g_cursor) {

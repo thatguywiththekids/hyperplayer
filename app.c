@@ -163,8 +163,6 @@ static void app_load_config(AppState *app)
     app->config.modOctaveOffset = app_ini_get_int(app, L"PATTERN", L"MOD_OCTAVE_OFFSET", 0);
 }
 
-bool app_prepare_runtime_dlls(AppState *app) { if (app) app->runtimeDllsReady = true; return true; }
-void app_cleanup_runtime_dlls(AppState *app) { (void)app; }
 
 void app_set_status(AppState *app, const wchar_t *fmt, ...)
 {
