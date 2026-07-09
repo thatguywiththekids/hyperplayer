@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #endif
 #include <wchar.h>
+#include <wctype.h>
 
 static const int AREA_X = 1363;
 static const int AREA_Y = 134;
@@ -24,6 +25,29 @@ static int compare_entries(const void *a, const void *b) {
     DirectoryEntry *eb = (DirectoryEntry *)b;
     if (ea->isDir != eb->isDir) return eb->isDir - ea->isDir;
     return wcscmp(ea->name, eb->name);
+}
+
+static bool should_keep_file(const wchar_t *name) {
+    size_t len = wcslen(name);
+    if (len < 4) return false;
+
+    // Check "mod." prefix (case insensitive)
+    if (towlower(name[0]) == L'm' &&
+        towlower(name[1]) == L'o' &&
+        towlower(name[2]) == L'd' &&
+        name[3] == L'.') {
+        return true;
+    }
+
+    // Check ".mod" suffix (case insensitive)
+    if (name[len - 4] == L'.' &&
+        towlower(name[len - 3]) == L'm' &&
+        towlower(name[len - 2]) == L'o' &&
+        towlower(name[len - 1]) == L'd') {
+        return true;
+    }
+
+    return false;
 }
 
 #ifdef _WIN32
@@ -70,6 +94,17 @@ static bool refresh_listing(AppState *app, const wchar_t *path) {
     
     do {
         if (wcscmp(fd.cFileName, L".") == 0) continue;
+
+        bool isDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        bool isParent = (wcscmp(fd.cFileName, L"..") == 0);
+
+        // Filter files that are not directories or parent navigations
+        if (!isDir && !isParent) {
+            if (!should_keep_file(fd.cFileName)) {
+                continue;
+            }
+        }
+
         if (dl->entryCount >= dl->entryCapacity) {
             dl->entryCapacity = dl->entryCapacity ? dl->entryCapacity * 2 : 16;
             dl->entries = realloc(dl->entries, sizeof(DirectoryEntry) * dl->entryCapacity);
@@ -85,9 +120,9 @@ static bool refresh_listing(AppState *app, const wchar_t *path) {
         }
         wcsncat(e->fullPath, e->name, MAX_PATH - wcslen(e->fullPath) - 1);
         
-        e->isDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        e->isDir = isDir;
         e->size = ((unsigned long long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
-        e->isParent = (wcscmp(fd.cFileName, L"..") == 0);
+        e->isParent = isParent;
     } while (FindNextFileW(hFind, &fd));
     
     FindClose(hFind);
@@ -124,6 +159,31 @@ static bool refresh_listing(AppState *app, const wchar_t *path) {
     struct dirent *de;
     while ((de = readdir(d)) != NULL) {
         if (strcmp(de->d_name, ".") == 0) continue;
+
+        bool isParent = (strcmp(de->d_name, "..") == 0);
+        bool isDir = false;
+        unsigned long long size = 0;
+
+        char full[MAX_PATH*4];
+        snprintf(full, sizeof(full), "%s/%s", mbsPath, de->d_name);
+
+        struct stat st;
+        if (stat(full, &st) == 0) {
+            isDir = S_ISDIR(st.st_mode);
+            size = (unsigned long long)st.st_size;
+        } else {
+            isDir = (de->d_type == DT_DIR);
+        }
+
+        // Filter files that are not directories or parent navigations
+        if (!isDir && !isParent) {
+            wchar_t wName[260];
+            mbstowcs(wName, de->d_name, 260);
+            if (!should_keep_file(wName)) {
+                continue;
+            }
+        }
+
         if (dl->entryCount >= dl->entryCapacity) {
             dl->entryCapacity = dl->entryCapacity ? dl->entryCapacity * 2 : 16;
             dl->entries = realloc(dl->entries, sizeof(DirectoryEntry) * dl->entryCapacity);
@@ -131,20 +191,14 @@ static bool refresh_listing(AppState *app, const wchar_t *path) {
         DirectoryEntry *e = &dl->entries[dl->entryCount++];
         memset(e, 0, sizeof(DirectoryEntry));
         mbstowcs(e->name, de->d_name, 260);
-        char full[MAX_PATH*4];
-        snprintf(full, sizeof(full), "%s/%s", mbsPath, de->d_name);
         wcsncpy(e->fullPath, resolvedPath, MAX_PATH);
         if (resolvedPath[wcslen(resolvedPath)-1] != L'/') {
             wcsncat(e->fullPath, L"/", MAX_PATH - wcslen(e->fullPath) - 1);
         }
         wcsncat(e->fullPath, e->name, MAX_PATH - wcslen(e->fullPath) - 1);
-        struct stat st;
-        if (stat(full, &st) == 0) {
-            e->isDir = S_ISDIR(st.st_mode); e->size = (unsigned long long)st.st_size;
-        } else {
-            e->isDir = (de->d_type == DT_DIR); e->size = 0;
-        }
-        e->isParent = (strcmp(de->d_name, "..") == 0);
+        e->isDir = isDir;
+        e->size = size;
+        e->isParent = isParent;
     }
     closedir(d);
     qsort(dl->entries, dl->entryCount, sizeof(DirectoryEntry), compare_entries);
