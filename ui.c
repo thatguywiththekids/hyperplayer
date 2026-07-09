@@ -1,9 +1,5 @@
 #include "ui.h"
-#ifdef _WIN32
-#include "directory_listing_win32.h"
-#else
 #include "directory_listing.h"
-#endif
 #include "player.h"
 #include "mousecursor.h"
 #include "pattern_view.h"
