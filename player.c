@@ -521,10 +521,14 @@ bool player_load_module(AppState *app, const wchar_t *absolutePath, const wchar_
         fclose(f);
         return false;
     }
-    
-    fread(data, 1, size, f);
+
+    size_t items_read = 0;
+    items_read = fread(data, 1, size, f);
     fclose(f);
-    
+    if (items_read < size) {
+      return false;
+    }
+
     if (p->mod_audio_ext) {
         openmpt_module_ext_destroy(p->mod_audio_ext);
         p->mod_audio_ext = NULL; p->mod_audio = NULL;
