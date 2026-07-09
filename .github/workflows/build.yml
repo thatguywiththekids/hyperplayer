@@ -1,0 +1,47 @@
+name: Build Hyperplayer
+
+on:
+  push:
+    branches: [portable-version]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            triplet: x64-linux
+            toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
+          - os: windows-latest
+            triplet: x64-windows
+            toolchain: C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies on Debian-ish systems
+        if: matrix.os == 'ubuntu-latest'
+        run:
+          sudo apt-get update
+          sudo apt-get install -y pkg-config ninja-build libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libwayland-dev libegl1-mesa-dev libasound2-dev libpulse-dev libjack-dev
+
+      - name: Install common dependencies via vcpkg
+        run: vcpkg install sdl3 sdl3-image sdl3-ttf libopenmpt --triplet ${{ matrix.triplet }}
+
+      - name: Configure cmake build
+        run: |
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            cmake -B build -S . -G Ninja -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_BUILD_TYPE=Release
+          else
+            cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_BUILD_TYPE=Release
+          fi
+        shell: bash
+
+      - name: Build
+        run: cmake --build build --config Release
