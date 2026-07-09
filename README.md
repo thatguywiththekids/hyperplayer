@@ -109,6 +109,10 @@ cmake -B build -DAUDIO_BACKEND=ALSA
 cmake --build build
 ```
 
+**Additional documentation**
+
+ARCHITECTURE.md describes the software architecture.
+
 **http://www.hyperunknown.net**
 
 ![Hyperplayer screenshot](screenshots/hyperplayer-screenshot.png)
