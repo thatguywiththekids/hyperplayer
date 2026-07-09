@@ -20,7 +20,7 @@ static bool urls_open(AppState *app, const wchar_t *url)
 {
     if (!url || url[0] == L'\0') return false;
 
-    // ShellExecuteW is shimmed in portability_sdl3.c to call SDL_OpenURL
+    // ShellExecuteW is shimmed in renderer.c to call SDL_OpenURL on non-Windows platforms
     void* result = ShellExecuteW(
         app ? app->hwnd : NULL,
         L"open",

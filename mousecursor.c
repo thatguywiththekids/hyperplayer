@@ -29,7 +29,7 @@ void mousecursor_unload(void)
     }
 }
 
-void mousecursor_apply(HWND hwnd)
+void mousecursor_apply(void)
 {
     if (g_cursor) {
         SDL_SetCursor(g_cursor);

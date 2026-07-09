@@ -44,7 +44,6 @@ typedef struct DirectoryListing {
 typedef struct PlayerState PlayerState;
 
 typedef struct AppState {
-    HINSTANCE instance;
     HWND hwnd;
 
     wchar_t exeDir[MAX_PATH];

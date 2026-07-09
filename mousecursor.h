@@ -6,6 +6,6 @@
 
 bool mousecursor_load(const wchar_t *pngPath, int hotspotX, int hotspotY);
 void mousecursor_unload(void);
-void mousecursor_apply(HWND hwnd);
+void mousecursor_apply(void);
 
 #endif

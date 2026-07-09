@@ -69,7 +69,11 @@ int main(int argc, char *argv[])
 
     SDL_SetRenderLogicalPresentation(g_renderer, 1920, 1080, SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
-    app.hwnd = (HWND)g_window;
+#ifdef _WIN32
+    app.hwnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(g_window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+#else
+    app.hwnd = NULL;
+#endif
 
     HP_DrawContext ctx;
     hp_renderer_init_context(&ctx, g_renderer);

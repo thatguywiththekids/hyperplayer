@@ -4,8 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dirent.h>
 #include <sys/stat.h>
+#endif
 #include <wchar.h>
 
 static const int AREA_X = 1363;
@@ -22,6 +26,75 @@ static int compare_entries(const void *a, const void *b) {
     return wcscmp(ea->name, eb->name);
 }
 
+#ifdef _WIN32
+static bool refresh_listing(AppState *app, const wchar_t *path) {
+    DirectoryListing *dl = &app->directory;
+    wchar_t resolvedPath[MAX_PATH];
+    wcsncpy(resolvedPath, path, MAX_PATH);
+    
+    size_t len = wcslen(resolvedPath);
+    if (len > 3 && wcscmp(resolvedPath + len - 3, L"/..") == 0) {
+        resolvedPath[len - 3] = L'\0';
+        wchar_t *lastSlash = wcsrchr(resolvedPath, L'/');
+        if (!lastSlash) lastSlash = wcsrchr(resolvedPath, L'\\');
+        if (lastSlash) *lastSlash = L'\0';
+        if (resolvedPath[0] == L'\0') wcsncpy(resolvedPath, L"C:\\", MAX_PATH);
+    } else if (len > 3 && wcscmp(resolvedPath + len - 3, L"\\..") == 0) {
+        resolvedPath[len - 3] = L'\0';
+        wchar_t *lastSlash = wcsrchr(resolvedPath, L'/');
+        if (!lastSlash) lastSlash = wcsrchr(resolvedPath, L'\\');
+        if (lastSlash) *lastSlash = L'\0';
+        if (resolvedPath[0] == L'\0') wcsncpy(resolvedPath, L"C:\\", MAX_PATH);
+    }
+
+    wchar_t searchPattern[MAX_PATH*2];
+    wcsncpy(searchPattern, resolvedPath, MAX_PATH);
+    size_t rlen = wcslen(searchPattern);
+    if (rlen > 0 && searchPattern[rlen - 1] != L'/' && searchPattern[rlen - 1] != L'\\') {
+        wcsncat(searchPattern, L"\\*", MAX_PATH * 2 - rlen - 1);
+    } else {
+        wcsncat(searchPattern, L"*", MAX_PATH * 2 - rlen - 1);
+    }
+
+    WIN32_FIND_DATAW fd;
+    HANDLE hFind = FindFirstFileW(searchPattern, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return false;
+    
+    wcsncpy(dl->currentPath, resolvedPath, MAX_PATH);
+    dl->scroll = 0;
+    
+    if (dl->entries) free(dl->entries);
+    dl->entries = NULL;
+    dl->entryCount = 0;
+    dl->entryCapacity = 0;
+    
+    do {
+        if (wcscmp(fd.cFileName, L".") == 0) continue;
+        if (dl->entryCount >= dl->entryCapacity) {
+            dl->entryCapacity = dl->entryCapacity ? dl->entryCapacity * 2 : 16;
+            dl->entries = realloc(dl->entries, sizeof(DirectoryEntry) * dl->entryCapacity);
+        }
+        DirectoryEntry *e = &dl->entries[dl->entryCount++];
+        memset(e, 0, sizeof(DirectoryEntry));
+        wcsncpy(e->name, fd.cFileName, 260);
+        
+        wcsncpy(e->fullPath, resolvedPath, MAX_PATH);
+        size_t flen = wcslen(e->fullPath);
+        if (flen > 0 && e->fullPath[flen - 1] != L'/' && e->fullPath[flen - 1] != L'\\') {
+            wcsncat(e->fullPath, L"\\", MAX_PATH - flen - 1);
+        }
+        wcsncat(e->fullPath, e->name, MAX_PATH - wcslen(e->fullPath) - 1);
+        
+        e->isDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        e->size = ((unsigned long long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+        e->isParent = (wcscmp(fd.cFileName, L"..") == 0);
+    } while (FindNextFileW(hFind, &fd));
+    
+    FindClose(hFind);
+    qsort(dl->entries, dl->entryCount, sizeof(DirectoryEntry), compare_entries);
+    return true;
+}
+#else
 static bool refresh_listing(AppState *app, const wchar_t *path) {
     DirectoryListing *dl = &app->directory;
     char mbsPath[MAX_PATH*4];
@@ -77,6 +150,7 @@ static bool refresh_listing(AppState *app, const wchar_t *path) {
     qsort(dl->entries, dl->entryCount, sizeof(DirectoryEntry), compare_entries);
     return true;
 }
+#endif
 
 bool directory_listing_init(AppState *app, const wchar_t *rootPath) {
     return refresh_listing(app, rootPath);

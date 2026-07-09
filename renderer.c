@@ -5,7 +5,9 @@
 #include <SDL3_image/SDL_image.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <stdio.h>
 
 #ifndef _WIN32

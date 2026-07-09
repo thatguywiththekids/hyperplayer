@@ -23,7 +23,7 @@ bool hp_app_init(AppState *app, HP_DrawContext *ctx)
 
     // Assets need to be loaded after renderer is ready
     ui_load_assets(app, ctx);
-    mousecursor_apply(app->hwnd);
+    mousecursor_apply();
     return true;
 }
 

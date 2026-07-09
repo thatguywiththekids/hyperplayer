@@ -11,15 +11,8 @@
 
 // Basic Win32-style type aliases used in the core code
 typedef uint32_t DWORD;
-typedef uint16_t WORD;
-typedef uint32_t UINT;
-typedef int32_t LONG;
-typedef uint64_t ULONGLONG;
-typedef intptr_t INT_PTR;
 typedef void* HANDLE;
 typedef void* HWND;
-typedef void* HINSTANCE;
-typedef void* HCURSOR;
 
 #ifndef MAX_PATH
 #define MAX_PATH 260
