@@ -54,6 +54,7 @@ set(COMMON_SOURCES
     mousecursor.c
     pattern_view.c
     player.c
+    portability.c
     quadrascope.c
     renderer.c
     sample_display.c
