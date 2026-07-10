@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(hyperplayer C)
+project(hyperplayer C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -72,6 +72,7 @@ set(COMMON_SOURCES
 )
 
 add_executable(hyperplayer main_sdl3.c ${COMMON_SOURCES} ${AUDIO_SOURCES})
+set_target_properties(hyperplayer PROPERTIES LINKER_LANGUAGE CXX)
 
 target_link_libraries(hyperplayer PRIVATE
     SDL3::SDL3
