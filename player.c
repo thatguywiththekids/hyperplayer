@@ -1,6 +1,9 @@
 #include "player.h"
 #include "ui.h"
 #include <libopenmpt/libopenmpt.h>
+#ifdef _WIN32
+#undef interface
+#endif
 #include <libopenmpt/libopenmpt_ext.h>
 #include "audio.h"
 #include <math.h>
