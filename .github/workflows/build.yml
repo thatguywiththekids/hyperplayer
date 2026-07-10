@@ -18,8 +18,8 @@ jobs:
             triplet: x64-linux
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
             is_linux: true
-          - name: Build on Linux Dynamic (Ubuntu Latest)
-            os: ubuntu-latest
+          - name: Build on Linux Dynamic (Ubuntu 24.04)
+            os: ubuntu-24.04
             triplet: x64-linux-dynamic
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
             is_linux: true
@@ -53,3 +53,39 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release
+
+      - name: Package archive
+        shell: bash
+        run: |
+          mkdir -p hyperplayer
+          if [ "${{ matrix.is_linux }}" = "true" ]; then
+            # Copy executable
+            cp build/hyperplayer hyperplayer/
+            # Copy assets
+            cp build/background.png build/protracker.ttf build/PT-mousecursor.png build/hyperplayer.ini hyperplayer/
+            # Create tarball
+            tar cfz hyperplayer-remake-${{ matrix.triplet }}.tar.gz hyperplayer
+            # Set archive path in the github env setup so the upload step finds it
+            echo "ARCHIVE_PATH=hyperplayer-remake-${{ matrix.triplet }}.tar.gz" >> $GITHUB_ENV
+          else
+            # Windows
+            cp build/Release/hyperplayer.exe hyperplayer/
+            shopt -s nullglob
+            # Needed or not?
+            for dll in build/Release/*.dll; do
+              cp "$dll" hyperplayer/
+            done
+            # Copy assets
+            cp build/background.png build/protracker.ttf build/PT-mousecursor.png build/hyperplayer.ini hyperplayer/
+            # Create zip archive
+            7z a -tzip hyperplayer-remake-${{ matrix.triplet }}.zip hyperplayer
+            # Set archive path in the github env setup so the upload step finds it
+            echo "ARCHIVE_PATH=hyperplayer-remake-${{ matrix.triplet }}.zip" >> $GITHUB_ENV
+          fi
+
+      - name: Make archive available for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyperplayer-remake-${{ matrix.triplet }}
+          path: ${{ env.ARCHIVE_PATH }}
+          retention-days: 7
