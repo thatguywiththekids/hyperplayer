@@ -86,6 +86,7 @@ static bool refresh_listing(AppState *app, const wchar_t *path) {
     
     wcsncpy(dl->currentPath, resolvedPath, MAX_PATH);
     dl->scroll = 0;
+    dl->scrollAccumulator = 0.0f;
     
     if (dl->entries) free(dl->entries);
     dl->entries = NULL;
@@ -150,6 +151,7 @@ static bool refresh_listing(AppState *app, const wchar_t *path) {
     
     wcsncpy(dl->currentPath, resolvedPath, MAX_PATH);
     dl->scroll = 0;
+    dl->scrollAccumulator = 0.0f;
     
     if (dl->entries) free(dl->entries);
     dl->entries = NULL;
@@ -249,11 +251,25 @@ bool directory_listing_mouse_down(AppState *app, int x, int y) {
     return false;
 }
 
-void directory_listing_mouse_wheel(AppState *app, int wheelDelta) {
+void directory_listing_mouse_wheel(AppState *app, float y) {
     DirectoryListing *dl = &app->directory;
-    dl->scroll -= wheelDelta / 120;
-    if (dl->scroll < 0) dl->scroll = 0;
-    if (dl->scroll > dl->entryCount - 1) dl->scroll = dl->entryCount - 1;
+    dl->scrollAccumulator -= y;
+
+    int intDelta = (int)dl->scrollAccumulator;
+    if (intDelta != 0) {
+        // We have accumulated enough scrolling to scroll the directory list.
+        dl->scroll += intDelta;
+        dl->scrollAccumulator -= intDelta;
+
+        if (dl->scroll < 0)  {
+            dl->scroll = 0;
+            dl->scrollAccumulator = 0.0f;
+        }
+        if (dl->scroll > dl->entryCount - 1) {
+            dl->scroll = dl->entryCount - 1;
+            dl->scrollAccumulator = 0.0f;
+        }
+    }
 }
 
 bool directory_listing_move_to_neighbor(AppState *app, int step) {

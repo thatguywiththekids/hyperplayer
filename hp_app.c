@@ -75,7 +75,7 @@ void hp_app_on_mouse_wheel(AppState *app, float x, float y)
 {
     (void)x;
     if (app->showFileBrowser) {
-        directory_listing_mouse_wheel(app, (int)y * 120);
+        directory_listing_mouse_wheel(app, y);
     }
 }
 

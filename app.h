@@ -38,6 +38,7 @@ typedef struct DirectoryListing {
     int entryCount;
     int entryCapacity;
     int scroll;
+    float scrollAccumulator; // For keeping small increments from being lost in truncation
     int selectedIndex;
 } DirectoryListing;
 
