@@ -11,28 +11,32 @@ set(AUDIO_BACKEND "SDL3" CACHE STRING "Audio backend to use (SDL3 or ALSA)")
 find_package(SDL3 REQUIRED)
 find_package(SDL3_image REQUIRED)
 find_package(SDL3_ttf REQUIRED)
-if(WIN32)
+# First try finding libopenmpt as a CMake config package (e.g., via vcpkg)
+find_package(libopenmpt CONFIG QUIET)
+
+if(libopenmpt_FOUND)
+    set(OPENMPT_LIBRARIES libopenmpt::libopenmpt)
+    set(OPENMPT_INCLUDE_DIRS "")
+else()
+    # Fallback to pkg-config or manual search
     find_package(PkgConfig QUIET)
     if(PKG_CONFIG_FOUND)
-        pkg_check_modules(OPENMPT libopenmpt>=0.6.0)
+        pkg_check_modules(OPENMPT IMPORTED_TARGET libopenmpt>=0.6.0)
     endif()
 
-    if(NOT OPENMPT_FOUND)
+    if(OPENMPT_FOUND)
+        set(OPENMPT_LIBRARIES PkgConfig::OPENMPT)
+        set(OPENMPT_INCLUDE_DIRS "")
+    else()
         find_path(OPENMPT_INCLUDE_DIR NAMES libopenmpt/libopenmpt.h)
         find_library(OPENMPT_LIBRARY NAMES openmpt libopenmpt)
         if(OPENMPT_INCLUDE_DIR AND OPENMPT_LIBRARY)
             set(OPENMPT_INCLUDE_DIRS ${OPENMPT_INCLUDE_DIR})
             set(OPENMPT_LIBRARIES ${OPENMPT_LIBRARY})
-            set(OPENMPT_FOUND TRUE)
+        else()
+            message(FATAL_ERROR "libopenmpt>=0.6.0 not found. Please install libopenmpt or specify OPENMPT_INCLUDE_DIRS and OPENMPT_LIBRARIES.")
         endif()
     endif()
-
-    if(NOT OPENMPT_FOUND)
-        message(FATAL_ERROR "libopenmpt>=0.6.0 not found. Please install libopenmpt or specify OPENMPT_INCLUDE_DIRS and OPENMPT_LIBRARIES.")
-    endif()
-else()
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(OPENMPT REQUIRED libopenmpt>=0.6.0)
 endif()
 
 # Configure audio backend dependency and source file
@@ -75,8 +79,11 @@ target_link_libraries(hyperplayer PRIVATE
     SDL3_ttf::SDL3_ttf
     ${OPENMPT_LIBRARIES}
     ${AUDIO_LIBS}
-    m
 )
+
+if(NOT WIN32)
+    target_link_libraries(hyperplayer PRIVATE m)
+endif()
 
 target_include_directories(hyperplayer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${OPENMPT_INCLUDE_DIRS})
 target_compile_definitions(hyperplayer PRIVATE _CRT_SECURE_NO_WARNINGS)
