@@ -166,7 +166,7 @@ static bool refresh_listing(AppState *app, const wchar_t *path) {
         bool isDir = false;
         unsigned long long size = 0;
 
-        char full[MAX_PATH*4];
+        char full[MAX_PATH * 4 + 256 + 1];
         snprintf(full, sizeof(full), "%s/%s", mbsPath, de->d_name);
 
         struct stat st;
