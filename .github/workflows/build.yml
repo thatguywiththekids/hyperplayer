@@ -40,7 +40,7 @@ jobs:
           sudo apt-get install -y autoconf autoconf-archive automake libtool libltdl-dev pkg-config ninja-build libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libwayland-dev libegl1-mesa-dev libasound2-dev libpulse-dev libjack-dev libxtst-dev libxss-dev libgbm-dev libdrm-dev libdbus-1-dev libibus-1.0-dev libudev-dev
 
       - name: Install common dependencies via vcpkg
-        run: vcpkg install sdl3 sdl3-image sdl3-ttf libopenmpt --triplet ${{ matrix.triplet }}
+        run: vcpkg install sdl3 sdl3-image[png] sdl3-ttf libopenmpt --triplet ${{ matrix.triplet }}
 
       - name: Configure cmake build
         run: |
