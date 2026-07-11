@@ -63,10 +63,6 @@ jobs:
             cp build/hyperplayer hyperplayer/
             # Copy assets
             cp build/background.png build/protracker.ttf build/PT-mousecursor.png build/hyperplayer.ini hyperplayer/
-            # Create tarball
-            tar cfz hyperplayer-remake-${{ matrix.triplet }}.tar.gz hyperplayer
-            # Set archive path in the github env setup so the upload step finds it
-            echo "ARCHIVE_PATH=hyperplayer-remake-${{ matrix.triplet }}.tar.gz" >> $GITHUB_ENV
           else
             # Windows
             cp build/Release/hyperplayer.exe hyperplayer/
@@ -77,15 +73,11 @@ jobs:
             done
             # Copy assets
             cp build/background.png build/protracker.ttf build/PT-mousecursor.png build/hyperplayer.ini hyperplayer/
-            # Create zip archive
-            7z a -tzip hyperplayer-remake-${{ matrix.triplet }}.zip hyperplayer
-            # Set archive path in the github env setup so the upload step finds it
-            echo "ARCHIVE_PATH=hyperplayer-remake-${{ matrix.triplet }}.zip" >> $GITHUB_ENV
           fi
 
       - name: Make archive available for download
         uses: actions/upload-artifact@v4
         with:
           name: hyperplayer-remake-${{ matrix.triplet }}
-          path: ${{ env.ARCHIVE_PATH }}
+          path: hyperplayer
           retention-days: 7
