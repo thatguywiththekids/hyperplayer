@@ -57,27 +57,27 @@ jobs:
       - name: Package archive
         shell: bash
         run: |
-          mkdir -p hyperplayer
+          mkdir -p dist/hyperplayer
           if [ "${{ matrix.is_linux }}" = "true" ]; then
             # Copy executable
-            cp build/hyperplayer hyperplayer/
+            cp build/hyperplayer dist/hyperplayer/
             # Copy assets
-            cp build/background.png build/protracker.ttf build/PT-mousecursor.png build/hyperplayer.ini hyperplayer/
+            cp build/background.png build/protracker.ttf build/PT-mousecursor.png build/hyperplayer.ini dist/hyperplayer/
           else
             # Windows
-            cp build/Release/hyperplayer.exe hyperplayer/
+            cp build/Release/hyperplayer.exe dist/hyperplayer/
             shopt -s nullglob
             # Needed or not?
             for dll in build/Release/*.dll; do
-              cp "$dll" hyperplayer/
+              cp "$dll" dist/hyperplayer/
             done
             # Copy assets
-            cp build/background.png build/protracker.ttf build/PT-mousecursor.png build/hyperplayer.ini hyperplayer/
+            cp build/background.png build/protracker.ttf build/PT-mousecursor.png build/hyperplayer.ini dist/hyperplayer/
           fi
 
       - name: Make archive available for download
         uses: actions/upload-artifact@v4
         with:
           name: hyperplayer-remake-${{ matrix.triplet }}
-          path: hyperplayer
+          path: dist
           retention-days: 7
