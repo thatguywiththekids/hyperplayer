@@ -93,13 +93,11 @@ static void app_color_to_hex_text(HP_Color color, wchar_t *dst, size_t dstCount)
 bool app_ensure_default_ini_exists(void)
 {
     wchar_t exeDir[MAX_PATH], iniPath[MAX_PATH];
-    char mbsPath[MAX_PATH*4];
     app_get_exe_dir(exeDir, MAX_PATH);
     app_join_path(iniPath, MAX_PATH, exeDir, L"hyperplayer.ini");
     
-    wcstombs(mbsPath, iniPath, sizeof(mbsPath));
-    FILE *f = fopen(mbsPath, "rb"); if (f) { fclose(f); return true; }
-    f = fopen(mbsPath, "wb"); if (!f) return false;
+    FILE *f = hp_fopen(iniPath, L"rb"); if (f) { fclose(f); return true; }
+    f = hp_fopen(iniPath, L"wb"); if (!f) return false;
     extern const char g_defaultIniFileContents[];
     fwrite(g_defaultIniFileContents, 1, strlen(g_defaultIniFileContents), f);
     fclose(f); return true;

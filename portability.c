@@ -1,12 +1,41 @@
-#ifndef _WIN32
-
 #include "portability.h"
-#include <time.h>
-#include <unistd.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+void hp_wstr_to_utf8(char *dst, size_t dstBytes, const wchar_t *src)
+{
+    if (!dst || dstBytes == 0) return;
+    dst[0] = '\0';
+    if (!src) return;
+#ifdef _WIN32
+    WideCharToMultiByte(CP_UTF8, 0, src, -1, dst, (int)dstBytes, NULL, NULL);
+#else
+    wcstombs(dst, src, dstBytes);
+#endif
+}
+
+FILE *hp_fopen(const wchar_t *path, const wchar_t *mode)
+{
+#ifdef _WIN32
+    return _wfopen(path, mode);
+#else
+    char mbsPath[4096];
+    char mbsMode[16];
+    wcstombs(mbsPath, path, sizeof(mbsPath));
+    wcstombs(mbsMode, mode, sizeof(mbsMode));
+    return fopen(mbsPath, mbsMode);
+#endif
+}
+
+#ifndef _WIN32
+
+#include <time.h>
+#include <unistd.h>
 #include <SDL3/SDL.h>
 
 uint64_t GetTickCount64(void) {

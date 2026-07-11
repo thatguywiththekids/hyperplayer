@@ -97,9 +97,9 @@ void hp_draw_fill_rects(HP_DrawContext *ctx, const HP_Rect *rects, int count) {
 }
 
 HP_Font hp_load_font(const wchar_t *path, int pixelHeight) {
-    char mbsPath[4096];
-    wcstombs(mbsPath, path, sizeof(mbsPath));
-    TTF_Font *font = TTF_OpenFont(mbsPath, (float)pixelHeight);
+    char utf8Path[4096];
+    hp_wstr_to_utf8(utf8Path, sizeof(utf8Path), path);
+    TTF_Font *font = TTF_OpenFont(utf8Path, (float)pixelHeight);
     if (!font) {
         font = TTF_OpenFont("protracker.ttf", (float)pixelHeight);
     }
@@ -196,8 +196,7 @@ static TextCacheEntry *find_or_create_cache_entry(HP_DrawContext *ctx, HP_Font f
     }
     
     char mbs[4096];
-    wcstombs(mbs, text, sizeof(mbs));
-    mbs[4095] = '\0';
+    hp_wstr_to_utf8(mbs, sizeof(mbs), text);
     SDL_Color sdlColor = {color.r, color.g, color.b, color.a};
     SDL_Surface *surface = TTF_RenderText_Blended((TTF_Font*)font, mbs, 0, sdlColor);
     if (!surface) return NULL;
@@ -255,8 +254,7 @@ void hp_draw_text(HP_DrawContext *ctx, int x, int y, const wchar_t *text) {
 void hp_get_text_size(HP_DrawContext *ctx, const wchar_t *text, int *w, int *h) {
     if (!ctx->currentFont || !text) { if (w) *w = 0; if (h) *h = 0; return; }
     char mbs[4096];
-    wcstombs(mbs, text, sizeof(mbs));
-    mbs[4095] = '\0';
+    hp_wstr_to_utf8(mbs, sizeof(mbs), text);
     TTF_GetStringSize((TTF_Font*)ctx->currentFont, mbs, 0, w, h);
 }
 
@@ -312,9 +310,9 @@ void hp_set_texture_blend_mode(HP_Texture *tex, HP_BlendMode mode) {
 
 bool hp_load_texture_file(HP_DrawContext *ctx, const wchar_t *path, HP_Texture *outTex) {
     if (!ctx || !path || !outTex) return false;
-    char mbsPath[4096];
-    wcstombs(mbsPath, path, sizeof(mbsPath));
-    SDL_Surface *surface = IMG_Load(mbsPath);
+    char utf8Path[4096];
+    hp_wstr_to_utf8(utf8Path, sizeof(utf8Path), path);
+    SDL_Surface *surface = IMG_Load(utf8Path);
     if (!surface) {
         outTex->texture = NULL;
         outTex->width = 0;

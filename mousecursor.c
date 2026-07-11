@@ -9,7 +9,7 @@ static SDL_Cursor *g_cursor = NULL;
 bool mousecursor_load(const wchar_t *pngPath, int hotspotX, int hotspotY)
 {
     char path[MAX_PATH*4];
-    wcstombs(path, pngPath, sizeof(path));
+    hp_wstr_to_utf8(path, sizeof(path), pngPath);
     
     SDL_Surface *surface = IMG_Load(path);
     if (!surface) return false;

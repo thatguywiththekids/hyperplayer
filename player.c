@@ -509,10 +509,7 @@ bool player_load_module(AppState *app, const wchar_t *absolutePath, const wchar_
     PlayerState *p = app->player;
     if (!p) return false;
     
-    char path[MAX_PATH*4];
-    wcstombs(path, absolutePath, sizeof(path));
-    
-    FILE *f = fopen(path, "rb");
+    FILE *f = hp_fopen(absolutePath, L"rb");
     if (!f) return false;
     
     fseek(f, 0, SEEK_END);

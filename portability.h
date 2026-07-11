@@ -29,4 +29,11 @@ void* ShellExecuteW(HWND hwnd, const wchar_t* lpOperation, const wchar_t* lpFile
 
 #endif // _WIN32
 
+#include <stdio.h>
+#include <wchar.h>
+#include <stddef.h>
+
+void hp_wstr_to_utf8(char *dst, size_t dstBytes, const wchar_t *src);
+FILE *hp_fopen(const wchar_t *path, const wchar_t *mode);
+
 #endif // PORTABILITY_H
