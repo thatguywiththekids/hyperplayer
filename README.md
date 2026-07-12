@@ -49,6 +49,8 @@ A large part of the visual behavior is controlled through hyperplayer.ini, inclu
 **Right Arrow:** next pattern/order
 **Up Arrow:** load and play previous MOD in the current folder
 **Down Arrow:** load and play next MOD in the current folder
+**F11 or Alt + Enter:** toggle fullscreen mode
+**F10 or Alt + B:** toggle borderless window mode (only when windowed)
 **Escape:** quit the application
 
 **How to use it**
@@ -74,17 +76,17 @@ Hyperplayer is built with C11 and uses:
 **Configuration**
 
 Hyperplayer reads settings from hyperplayer.ini. Current configuration sections include:
-SYSTEM
-AUDIO
-SAMPLELIST
-PATTERN
-QUADRASCOPE
-VUMETER
-SAMPLEVIEW
-SPECTRUMANALYZER
-VISUALIZER
+* **SYSTEM**: startup folder (`DEFAULTDIR`), borderless window (`BORDERLESS`), and fullscreen mode (`FULLSCREEN`).
+* **AUDIO**
+* **SAMPLELIST**
+* **PATTERN**
+* **QUADRASCOPE**
+* **VUMETER**
+* **SAMPLEVIEW**
+* **SPECTRUMANALYZER**
+* **VISUALIZER**
 
-This makes it possible to change the startup folder, stereo image, text colors, waveform colors, VU colors, analyzer layout, sample highlight behavior, and the behavior of the radial tunnel visualizer without recompiling.
+This makes it possible to change the startup folder, toggle borderless or fullscreen window states, modify the stereo image, adjust colors and visualizer layouts, and fine-tune the rendering parameters without recompiling.
 
 **Building**
 

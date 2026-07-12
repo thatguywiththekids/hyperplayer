@@ -83,6 +83,13 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if (app.config.borderless) {
+        SDL_SetWindowBordered(g_window, false);
+    }
+    if (app.config.fullscreen) {
+        SDL_SetWindowFullscreen(g_window, true);
+    }
+
     SDL_Event event;
     uint64_t lastTime = SDL_GetTicksNS();
     const int targetFps = 60;
@@ -119,14 +126,28 @@ int main(int argc, char *argv[])
                     break;
                 case SDL_EVENT_KEY_DOWN:
                     {
-                        bool quit = false;
-                        hp_app_on_key_down(
-                            &app, 
-                            map_sdl_key(event.key.key), 
-                            map_sdl_modifiers(event.key.mod), 
-                            &quit
-                        );
-                        if (quit) g_running = false;
+                        if (event.key.key == SDLK_F11 || 
+                            (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT))) {
+                            SDL_WindowFlags flags = SDL_GetWindowFlags(g_window);
+                            bool is_fullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
+                            SDL_SetWindowFullscreen(g_window, !is_fullscreen);
+                        } else if (event.key.key == SDLK_F10 || 
+                                   (event.key.key == SDLK_B && (event.key.mod & SDL_KMOD_ALT))) {
+                            SDL_WindowFlags flags = SDL_GetWindowFlags(g_window);
+                            if (!(flags & SDL_WINDOW_FULLSCREEN)) {
+                                bool is_borderless = (flags & SDL_WINDOW_BORDERLESS) != 0;
+                                SDL_SetWindowBordered(g_window, is_borderless);
+                            }
+                        } else {
+                            bool quit = false;
+                            hp_app_on_key_down(
+                                &app, 
+                                map_sdl_key(event.key.key), 
+                                map_sdl_modifiers(event.key.mod), 
+                                &quit
+                            );
+                            if (quit) g_running = false;
+                        }
                     }
                     break;
             }

@@ -154,6 +154,8 @@ static void app_load_config(AppState *app)
     if (app->config.stereoSeparation < 0) app->config.stereoSeparation = 0;
     if (app->config.stereoSeparation > 200) app->config.stereoSeparation = 200;
     app->config.modOctaveOffset = app_ini_get_int(app, L"PATTERN", L"MOD_OCTAVE_OFFSET", 0);
+    app->config.borderless = app_ini_get_int(app, L"SYSTEM", L"BORDERLESS", 0) != 0;
+    app->config.fullscreen = app_ini_get_int(app, L"SYSTEM", L"FULLSCREEN", 0) != 0;
 }
 
 
@@ -216,7 +218,7 @@ void app_shutdown(AppState *app)
 }
 
 const char g_defaultIniFileContents[] =
-    "[SYSTEM]\r\nDEFAULTDIR=.\r\n\r\n"
+    "[SYSTEM]\r\nDEFAULTDIR=.\r\nBORDERLESS=0\r\nFULLSCREEN=0\r\n\r\n"
     "[AUDIO]\r\nSTEREOSEPARATION=33\r\n\r\n"
     "[SAMPLELIST]\r\nBGTRANSPARENCY=45\r\nBGFADE=0.95\r\n\r\n"
     "[PATTERN]\r\nTEXTCOLOR1=3648FF\r\nTEXTCOLOR2=7196FF\r\n\r\n"
