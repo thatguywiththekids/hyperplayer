@@ -92,6 +92,8 @@ target_compile_definitions(hyperplayer PRIVATE _CRT_SECURE_NO_WARNINGS)
 if(NOT WIN32)
     # Enable some POSIX features
     target_compile_definitions(hyperplayer PRIVATE _DEFAULT_SOURCE _GNU_SOURCE)
+    # Ensure compatibility with both classic DT_HASH and modern DT_GNU_HASH
+    target_link_options(hyperplayer PRIVATE "-Wl,--hash-style=both")
 endif()
 
 # Copy assets to build directory

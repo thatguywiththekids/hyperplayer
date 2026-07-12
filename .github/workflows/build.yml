@@ -13,23 +13,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Build on Linux Static (Ubuntu 24.04)
-            os: ubuntu-24.04
+          - name: Build on Linux Static (Ubuntu 22.04)
+            os: ubuntu-22.04
             triplet: x64-linux
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
             is_linux: true
-          - name: Build on Linux Dynamic (Ubuntu 24.04)
-            os: ubuntu-24.04
+          - name: Build on Linux Dynamic (Ubuntu 22.04)
+            os: ubuntu-22.04
             triplet: x64-linux-dynamic
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
             is_linux: true
-          - name: Build on Linux ARM64 Static (Ubuntu 24.04)
-            os: ubuntu-24.04-arm
+          - name: Build on Linux ARM64 Static (Ubuntu 22.04)
+            os: ubuntu-22.04-arm
             triplet: arm64-linux
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
             is_linux: true
-          - name: Build on Linux ARM64 Dynamic (Ubuntu 24.04)
-            os: ubuntu-24.04-arm
+          - name: Build on Linux ARM64 Dynamic (Ubuntu 22.04)
+            os: ubuntu-22.04-arm
             triplet: arm64-linux-dynamic
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
             is_linux: true
